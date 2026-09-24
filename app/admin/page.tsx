@@ -19,6 +19,7 @@ export default function AdminPanel() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [tab, setTab] = useState<Tab>("pendiente");
   const [userEmail, setUserEmail] = useState("");
+  const [displayName, setDisplayName] = useState("");
   const [settings, setSettings] = useState({
     title: "", subtitle: "", description: "", draw_date: "",
     ticket_price: 2000, whatsapp_number: "", alias: "",
@@ -40,6 +41,8 @@ export default function AdminPanel() {
       return;
     }
     setUserEmail(user.email ?? "");
+    const { data: prof } = await supabase.from("admin_profiles").select("display_name").eq("user_id", user.id).single();
+    if (prof?.display_name) setDisplayName(prof.display_name as string);
     const { data: tk } = await supabase.from("tickets").select("*").order("created_at", { ascending: false }).limit(2000);
     if (tk) setTickets(tk as Ticket[]);
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
@@ -184,7 +187,7 @@ export default function AdminPanel() {
             </Link>
             <div>
               <h1 className="text-lg font-extrabold leading-tight tracking-tight">Panel Admin</h1>
-              <p className="tnum truncate text-xs text-brand-100">{userEmail}</p>
+              <p className="tnum truncate text-xs text-brand-100">{displayName || userEmail}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
