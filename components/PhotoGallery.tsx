@@ -37,7 +37,7 @@ export default function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
 
   return (
     <section aria-label="Fotos del sorteo" className="animate-fade-up overflow-hidden rounded-3xl border border-brand-100 bg-white shadow-card dark:border-white/10 dark:bg-night-850">
-      <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-3">
+      <div className="grid grid-cols-3 gap-1.5 p-2 sm:gap-2 sm:p-3">
         {photos.map((p, i) => (
           <button
             key={p.id}
