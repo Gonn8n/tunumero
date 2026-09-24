@@ -43,7 +43,7 @@ export default function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
             key={p.id}
             onClick={() => setOpen(i)}
             aria-label={`Ampliar foto ${i + 1} de ${photos.length}`}
-            className="group relative aspect-[4/3] overflow-hidden rounded-2xl bg-slate-100 dark:bg-night-800"
+            className="group relative aspect-[9/16] overflow-hidden rounded-2xl bg-slate-100 dark:bg-night-800"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img

@@ -136,7 +136,7 @@ export default function PhotoManager({ onMessage }: { onMessage: (t: string, ok?
         {photos.map((p, i) => (
           <div key={p.id} className="overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={p.image_url} alt={`Foto ${i + 1}`} className="aspect-[4/3] w-full object-cover" loading="lazy" />
+            <img src={p.image_url} alt={`Foto ${i + 1}`} className="aspect-[9/16] w-full object-cover" loading="lazy" />
             <div className="flex items-center justify-between gap-1 p-2">
               <div className="flex gap-1">
                 <button onClick={() => move(i, -1)} disabled={i === 0 || busy} aria-label="Mover antes"
