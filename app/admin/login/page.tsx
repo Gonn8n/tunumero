@@ -3,11 +3,12 @@ import { useState } from "react";
 import { createClient } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ShieldIcon, TicketIcon } from "@/components/icons";
+import { EyeIcon, EyeOffIcon, ShieldIcon, TicketIcon } from "@/components/icons";
 
 export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -59,14 +60,25 @@ export default function AdminLogin() {
         </label>
         <label className="mt-3 block text-sm font-medium">
           Contraseña
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && login()}
-            className="mt-1 h-12 w-full rounded-xl border border-slate-300 bg-white px-4 dark:border-white/10 dark:bg-night-800"
-          />
+          <span className="relative mt-1 block">
+            <input
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && login()}
+              className="h-12 w-full rounded-xl border border-slate-300 bg-white px-4 pr-12 dark:border-white/10 dark:bg-night-800"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              aria-label={showPassword ? "Ocultar contraseña" : "Mostrar contraseña"}
+              aria-pressed={showPassword}
+              className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 transition hover:text-brand-600"
+            >
+              {showPassword ? <EyeOffIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+            </button>
+          </span>
         </label>
         {error && <p role="alert" className="mt-3 text-sm font-medium text-rose-500">{error}</p>}
         <button

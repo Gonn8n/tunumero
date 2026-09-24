@@ -1,6 +1,7 @@
 import { createServerSupabase } from "@/lib/supabaseServer";
 import SearchNumber from "@/components/SearchNumber";
 import CopyButton from "@/components/CopyButton";
+import PhotoGallery, { type GalleryPhoto } from "@/components/PhotoGallery";
 import ThemeToggle from "@/components/ThemeToggle";
 import Link from "next/link";
 import { totalNumbers, MIN_NUMBER, MAX_NUMBER } from "@/lib/tickets";
@@ -27,6 +28,7 @@ const FALLBACK = {
 export default async function Home() {
   let settings = FALLBACK;
   let taken: number[] = [];
+  let photos: GalleryPhoto[] = [];
   try {
     const supabase = createServerSupabase();
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
@@ -37,6 +39,12 @@ export default async function Home() {
       .in("status", ["pendiente", "reservado", "confirmado"])
       .range(0, 6000);
     if (t) taken = t.map((r: { number: number }) => r.number);
+    const { data: img } = await supabase
+      .from("raffle_images")
+      .select("id,image_url,sort_order")
+      .order("sort_order", { ascending: true })
+      .limit(3);
+    if (img) photos = img as GalleryPhoto[];
   } catch {
     /* sin env/Supabase: usa fallback para poder ver el diseño */
   }
@@ -130,6 +138,7 @@ export default async function Home() {
       </div>
 
       <main className="mx-auto max-w-3xl space-y-4 p-4 pb-16">
+        <PhotoGallery photos={photos} />
         <section className="-mt-2 animate-fade-up" style={{ animationDelay: "120ms" }}>
           <SearchNumber taken={taken} whatsapp={settings.whatsapp_number} min={min} max={max} alias={settings.alias ?? "—"} />
         </section>

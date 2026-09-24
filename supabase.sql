@@ -106,12 +106,75 @@ create trigger trg_range_shrink
   before update on public.raffle_settings
   for each row execute function public.check_range_shrink();
 
--- MIGRACIÓN (solo si ya corriste una versión anterior del script):
--- alter table public.raffle_settings add column if not exists min_number int not null default 0;
--- alter table public.raffle_settings add column if not exists max_number int not null default 4999;
--- alter table public.raffle_settings drop constraint if exists settings_range_valid;
--- alter table public.raffle_settings add constraint settings_range_valid
---   check (min_number >= 0 and max_number <= 99999 and min_number <= max_number);
--- alter table public.tickets drop constraint if exists tickets_number_check;
--- alter table public.tickets add constraint tickets_number_check check (number >= 0 and number <= 99999);
--- update public.raffle_settings set description = replace(description, '0 al 5000', '0 al 4999') where id = 1;
+-- ============ FOTOS DEL SORTEO (máx 3, Storage + tabla) ============
+
+-- Bucket público para las fotos
+insert into storage.buckets (id, name, public)
+  values ('raffle-images', 'raffle-images', true)
+  on conflict (id) do update set public = true;
+
+-- Lectura pública de fotos
+drop policy if exists "raffle images public read" on storage.objects;
+create policy "raffle images public read" on storage.objects
+  for select using (bucket_id = 'raffle-images');
+
+-- Solo admins (autenticados) suben / reemplazan / borran
+drop policy if exists "raffle images admin write" on storage.objects;
+create policy "raffle images admin write" on storage.objects
+  for insert with check (bucket_id = 'raffle-images' and auth.role() = 'authenticated');
+
+drop policy if exists "raffle images admin update" on storage.objects;
+create policy "raffle images admin update" on storage.objects
+  for update using (bucket_id = 'raffle-images' and auth.role() = 'authenticated')
+  with check (bucket_id = 'raffle-images');
+
+drop policy if exists "raffle images admin delete" on storage.objects;
+create policy "raffle images admin delete" on storage.objects
+  for delete using (bucket_id = 'raffle-images' and auth.role() = 'authenticated');
+
+-- Tabla de fotos (orden + URL pública)
+create table if not exists public.raffle_images (
+  id uuid primary key default gen_random_uuid(),
+  image_url text not null,
+  storage_path text not null,
+  sort_order int not null default 0,
+  created_at timestamptz default now()
+);
+
+alter table public.raffle_images enable row level security;
+
+drop policy if exists "images public read" on public.raffle_images;
+create policy "images public read" on public.raffle_images for select using (true);
+
+drop policy if exists "images admin all" on public.raffle_images;
+create policy "images admin all" on public.raffle_images
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- Tope: máximo 3 fotos
+create or replace function public.check_max_images()
+returns trigger language plpgsql as $$
+declare
+  total int;
+begin
+  select count(*) into total from public.raffle_images;
+  if total >= 3 then
+    raise exception 'Máximo 3 fotos. Eliminá o reemplazá una existente.';
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_max_images on public.raffle_images;
+create trigger trg_max_images
+  before insert on public.raffle_images
+  for each row execute function public.check_max_images();
+
+-- Fotos de ejemplo (solo si la tabla está vacía, para ver el diseño en local)
+insert into public.raffle_images (image_url, storage_path, sort_order)
+  select 'https://picsum.photos/seed/tunumero1/800/600', 'seed/tunumero1', 0
+  where not exists (select 1 from public.raffle_images)
+  union all
+  select 'https://picsum.photos/seed/tunumero2/800/600', 'seed/tunumero2', 1
+  where not exists (select 1 from public.raffle_images)
+  union all
+  select 'https://picsum.photos/seed/tunumero3/800/600', 'seed/tunumero3', 2
+  where not exists (select 1 from public.raffle_images);

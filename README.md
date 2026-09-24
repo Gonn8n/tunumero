@@ -3,7 +3,7 @@
 Next.js 14 + Tailwind + Supabase + next-themes. Deploy pensado para `tunumero.vercel.app`.
 
 ## 1. Supabase
-1. En tu proyecto existente: SQL Editor → pegar `supabase.sql` → Run.
+1. En tu proyecto existente: SQL Editor → pegar `supabase.sql` → Run (re-ejecutable, crea lo que falte: bucket `raffle-images`, tabla `raffle_images`, policies, triggers).
 2. Authentication → Add user (tantos admins como quieras, email+password).
 3. Opcional: `admin_profiles(user_id, display_name)` para nombre visible.
 4. Ajustá `whatsapp_number` en `raffle_settings` (solo dígitos, ej `5491100000000`).

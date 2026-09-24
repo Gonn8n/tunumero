@@ -19,8 +19,7 @@ function Base({ className = "h-5 w-5", children }: IconProps & { children: React
   );
 }
 
-export const TicketIcon = (p: IconProps) => (
-  <Base {...p}>
+export const TicketIcon = (p: IconProps) => (  <Base {...p}>
     <path d="M3 9V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v2a2.5 2.5 0 0 0 0 5v2a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-2a2.5 2.5 0 0 0 0-5Z" />
     <path d="M13 5v2m0 4v2m0 4v2" strokeDasharray="2 2" />
   </Base>
@@ -136,5 +135,59 @@ export const CopyIcon = (p: IconProps) => (
 export const SparkIcon = (p: IconProps) => (
   <Base {...p}>
     <path d="M12 2v6m0 8v6M2 12h6m8 0h6M5 5l4 4m6 6 4 4m0-14-4 4m-6 6-4 4" />
+  </Base>
+);
+
+export const EyeIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z" />
+    <circle cx="12" cy="12" r="3" />
+  </Base>
+);
+
+export const EyeOffIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c6.5 0 10 8 10 8a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.5 13.5 0 0 0 2 12s3.5 8 10 8a9.74 9.74 0 0 0 5.39-1.61" />
+    <path d="m2 2 20 20" />
+    <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
+  </Base>
+);
+
+export const ChevronLeftIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="m14 6-6 6 6 6" />
+  </Base>
+);
+
+export const ChevronRightIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="m10 6 6 6-6 6" />
+  </Base>
+);
+
+export const ImageIcon = (p: IconProps) => (
+  <Base {...p}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <circle cx="9" cy="9" r="2" />
+    <path d="m21 15-4.5-4.5L6 21" />
+  </Base>
+);
+
+export const TrashIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2m2 0v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V6" />
+    <path d="M10 11v6M14 11v6" />
+  </Base>
+);
+
+export const ArrowUpIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M12 19V5m-7 7 7-7 7 7" />
+  </Base>
+);
+
+export const ArrowDownIcon = (p: IconProps) => (
+  <Base {...p}>
+    <path d="M12 5v14m7-7-7 7-7-7" />
   </Base>
 );

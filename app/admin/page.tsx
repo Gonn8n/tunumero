@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabaseClient";
 import ThemeToggle from "@/components/ThemeToggle";
+import PhotoManager from "@/components/PhotoManager";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, type Ticket } from "@/lib/tickets";
@@ -402,6 +403,7 @@ export default function AdminPanel() {
             <button onClick={saveSettings} className="mt-4 h-12 rounded-xl bg-brand-600 px-6 font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98]">
               Guardar cambios
             </button>
+            <PhotoManager onMessage={say} />
           </section>
         )}
       </main>
