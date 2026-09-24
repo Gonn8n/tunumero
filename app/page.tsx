@@ -62,7 +62,7 @@ export default async function Home() {
 
   const transferRows = [
     { label: "Alias", value: settings.alias ?? "—", copy: true },
-    { label: "CBU", value: settings.transfer_cbu ?? "—", copy: false },
+    { label: "CUIT", value: settings.transfer_cbu ?? "—", copy: false },
     { label: "Titular", value: settings.transfer_holder ?? "—", copy: false },
     { label: "Banco / Billetera", value: settings.transfer_bank ?? "—", copy: false }
   ];

@@ -175,7 +175,7 @@ export default function AdminPanel() {
     { key: "whatsapp_number", label: "WhatsApp admin (solo dígitos)" },
     { key: "alias", label: "Alias único de cobro" },
     { key: "transfer_holder", label: "Titular de la cuenta" },
-    { key: "transfer_cbu", label: "CBU" },
+    { key: "transfer_cbu", label: "CUIT" },
     { key: "transfer_bank", label: "Banco / Billetera" }
   ] as const;
 
