@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-page: #eef3fb;
+}
+
+.dark {
+  --bg-page: #040a17;
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  @apply bg-[var(--bg-page)] font-sans text-slate-900 antialiased dark:text-slate-100;
+  text-rendering: optimizeLegibility;
+}
+
+:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.65);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Números tabulares para tickets, precios y tablas */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Trama de fondo sutil (grid) para secciones hero */
+.bg-blueprint {
+  background-image:
+    linear-gradient(rgba(147, 197, 253, 0.14) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(147, 197, 253, 0.14) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse 90% 80% at 50% 20%, black 40%, transparent 100%);
+}
+
+/* Borde perforado de boleto (stub) */
+.ticket-perf {
+  background-image: linear-gradient(180deg, currentColor 55%, transparent 45%);
+  background-size: 2px 12px;
+  background-repeat: repeat-y;
+  opacity: 0.35;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
