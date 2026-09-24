@@ -30,6 +30,7 @@ export default function AdminPanel() {
   const [manual, setManual] = useState({ number: "", nombre: "", apellido: "", dni: "", telefono: "" });
   const [msg, setMsg] = useState("");
   const [msgOk, setMsgOk] = useState(true);
+  const [checking, setChecking] = useState(true);
   const router = useRouter();
 
   const say = (text: string, ok = true) => { setMsg(text); setMsgOk(ok); };
@@ -44,6 +45,7 @@ export default function AdminPanel() {
     setUserEmail(user.email ?? "");
     const { data: prof } = await supabase.from("admin_profiles").select("display_name").eq("user_id", user.id).single();
     if (prof?.display_name) setDisplayName(prof.display_name as string);
+    setChecking(false);
     const { data: tk } = await supabase.from("tickets").select("*").order("created_at", { ascending: false }).limit(2000);
     if (tk) setTickets(tk as Ticket[]);
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
@@ -179,6 +181,12 @@ export default function AdminPanel() {
 
   return (
     <div className="min-h-dvh">
+      {checking && (
+        <div className="fixed inset-0 z-50 flex min-h-dvh flex-col items-center justify-center gap-3 bg-gradient-to-b from-brand-800 to-brand-600 text-white">
+          <span className="h-10 w-10 animate-spin rounded-full border-4 border-white/25 border-t-white" aria-hidden="true" />
+          <p className="text-sm font-medium">Verificando acceso…</p>
+        </div>
+      )}
       <div className="relative overflow-hidden bg-gradient-to-b from-brand-800 to-brand-600 pb-6 text-white">
         <div className="bg-blueprint absolute inset-0" aria-hidden="true" />
         <header className="relative mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 p-4">
