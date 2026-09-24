@@ -31,6 +31,7 @@ export default function AdminPanel() {
   const [msg, setMsg] = useState("");
   const [msgOk, setMsgOk] = useState(true);
   const [checking, setChecking] = useState(true);
+  const [adminNames, setAdminNames] = useState<Record<string, string>>({});
   const router = useRouter();
 
   const say = (text: string, ok = true) => { setMsg(text); setMsgOk(ok); };
@@ -46,6 +47,14 @@ export default function AdminPanel() {
     const { data: prof } = await supabase.from("admin_profiles").select("display_name").eq("user_id", user.id).single();
     if (prof?.display_name) setDisplayName(prof.display_name as string);
     setChecking(false);
+    const { data: profs } = await supabase.from("admin_profiles").select("user_id,display_name");
+    if (profs) {
+      const map: Record<string, string> = {};
+      for (const p of profs as { user_id: string; display_name: string }[]) {
+        map[p.user_id] = p.display_name;
+      }
+      setAdminNames(map);
+    }
     const { data: tk } = await supabase.from("tickets").select("*").order("created_at", { ascending: false }).limit(2000);
     if (tk) setTickets(tk as Ticket[]);
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
@@ -271,7 +280,14 @@ export default function AdminPanel() {
                 {rows.map((t) => (
                   <tr key={t.id} className="border-b border-slate-50 transition last:border-0 hover:bg-brand-50/50 dark:border-white/5 dark:hover:bg-night-800">
                     <td className="tnum p-3 font-num text-base font-extrabold text-brand-700 dark:text-brand-300">{t.number}</td>
-                    <td className="p-3 font-medium">{t.nombre} {t.apellido}</td>
+                    <td className="p-3">
+                      <p className="font-medium">{t.nombre} {t.apellido}</p>
+                      {t.status === "confirmado" && t.confirmed_by && adminNames[t.confirmed_by] && (
+                        <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">
+                          Conf. por {adminNames[t.confirmed_by]}
+                        </p>
+                      )}
+                    </td>
                     <td className="tnum p-3 text-slate-500 dark:text-slate-400">
                       {t.dni} /{" "}
                       <a
