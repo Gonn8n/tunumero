@@ -11,7 +11,17 @@ import {
   ShieldIcon, TicketIcon, UsersIcon, XIcon
 } from "@/components/icons";
 
-type Tab = "pendiente" | "reservado" | "confirmado" | "cancelado" | "reservar" | "config";
+type Tab = "pendiente" | "reservado" | "confirmado" | "cancelado" | "historial" | "reservar" | "config";
+
+interface HistoryEntry {
+  id: number;
+  ticket_id: string;
+  number: number;
+  action: string;
+  actor_id: string | null;
+  detail: string | null;
+  created_at: string;
+}
 
 const inputCls =
   "h-12 w-full rounded-xl border border-slate-300 bg-white px-4 dark:border-white/10 dark:bg-night-800";
@@ -32,6 +42,8 @@ export default function AdminPanel() {
   const [msgOk, setMsgOk] = useState(true);
   const [checking, setChecking] = useState(true);
   const [adminNames, setAdminNames] = useState<Record<string, string>>({});
+  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [histFilter, setHistFilter] = useState("");
   const router = useRouter();
 
   const say = (text: string, ok = true) => { setMsg(text); setMsgOk(ok); };
@@ -57,6 +69,8 @@ export default function AdminPanel() {
     }
     const { data: tk } = await supabase.from("tickets").select("*").order("created_at", { ascending: false }).limit(2000);
     if (tk) setTickets(tk as Ticket[]);
+    const { data: hist } = await supabase.from("ticket_history").select("*").order("created_at", { ascending: false }).limit(300);
+    if (hist) setHistory(hist as HistoryEntry[]);
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
     if (s) setSettings({
       title: s.title ?? "", subtitle: s.subtitle ?? "", description: s.description ?? "",
@@ -149,7 +163,11 @@ export default function AdminPanel() {
   };
 
   const rows = tickets.filter((t) =>
-    tab === "reservar" || tab === "config" ? false : t.status === tab
+    tab === "reservar" || tab === "config" || tab === "historial" ? false : t.status === tab
+  );
+
+  const histRows = history.filter((h) =>
+    histFilter === "" || String(h.number).includes(histFilter.replace(/\D/g, ""))
   );
 
   const stats = [
@@ -165,6 +183,7 @@ export default function AdminPanel() {
     { id: "reservado", label: "Reservados", count: count("reservado") },
     { id: "confirmado", label: "Confirmados", count: count("confirmado") },
     { id: "cancelado", label: "Cancelados", count: count("cancelado") },
+    { id: "historial", label: "Historial" },
     { id: "reservar", label: "Reservar" },
     { id: "config", label: "Config" }
   ];
@@ -265,7 +284,63 @@ export default function AdminPanel() {
           ))}
         </nav>
 
-        {(tab !== "reservar" && tab !== "config") && (
+        {tab === "historial" && (
+          <div className="overflow-hidden rounded-2xl border border-brand-100 bg-white shadow-card dark:border-white/10 dark:bg-night-850">
+            <div className="border-b border-slate-100 p-3 dark:border-white/5">
+              <input
+                value={histFilter}
+                onChange={(e) => setHistFilter(e.target.value.replace(/\D/g, ""))}
+                inputMode="numeric"
+                placeholder="Filtrar por número…"
+                aria-label="Filtrar historial por número"
+                className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 sm:max-w-xs dark:border-white/10 dark:bg-night-800"
+              />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wider text-slate-400 dark:border-white/5">
+                    <th className="p-3">Fecha</th>
+                    <th className="p-3">N°</th>
+                    <th className="p-3">Movimiento</th>
+                    <th className="p-3">Por</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {histRows.map((h) => (
+                    <tr key={h.id} className="border-b border-slate-50 transition last:border-0 hover:bg-brand-50/50 dark:border-white/5 dark:hover:bg-night-800">
+                      <td className="whitespace-nowrap p-3 text-slate-500 dark:text-slate-400">
+                        {new Date(h.created_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}
+                      </td>
+                      <td className="tnum p-3 font-num text-base font-extrabold text-brand-700 dark:text-brand-300">{h.number}</td>
+                      <td className="p-3">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${
+                          h.action === "confirmado" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                          : h.action === "cancelado" ? "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"
+                          : h.action === "reservado" ? "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"
+                          : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                        }`}>
+                          {h.action === "pendiente" ? "Reserva web" : h.action === "reservado" ? "Reserva admin" : h.action}
+                        </span>
+                        {h.detail && h.action === "cancelado" && (
+                          <p className="mt-0.5 text-xs text-slate-400">Motivo: {h.detail}</p>
+                        )}
+                      </td>
+                      <td className="p-3 text-slate-500 dark:text-slate-400">
+                        {h.actor_id && adminNames[h.actor_id] ? adminNames[h.actor_id] : h.actor_id ? "Admin" : "Cliente web"}
+                      </td>
+                    </tr>
+                  ))}
+                  {histRows.length === 0 && (
+                    <tr><td className="p-6 text-center text-slate-400" colSpan={4}>Sin movimientos todavía.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {(tab !== "reservar" && tab !== "config" && tab !== "historial") && (
           <div className="overflow-x-auto rounded-2xl border border-brand-100 bg-white shadow-card dark:border-white/10 dark:bg-night-850">
             <table className="w-full text-sm">
               <thead>

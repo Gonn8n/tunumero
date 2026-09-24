@@ -178,3 +178,49 @@ insert into public.raffle_images (image_url, storage_path, sort_order)
   union all
   select 'https://picsum.photos/seed/tunumero3/800/600', 'seed/tunumero3', 2
   where not exists (select 1 from public.raffle_images);
+
+-- ============ HISTORIAL DE MOVIMIENTOS (auditoría) ============
+
+create table if not exists public.ticket_history (
+  id bigint generated always as identity primary key,
+  ticket_id uuid not null,
+  number int not null,
+  action text not null,
+  actor_id uuid,
+  detail text,
+  created_at timestamptz default now()
+);
+
+create index if not exists ticket_history_ticket_idx on public.ticket_history (ticket_id);
+create index if not exists ticket_history_number_idx on public.ticket_history (number);
+create index if not exists ticket_history_created_idx on public.ticket_history (created_at desc);
+
+alter table public.ticket_history enable row level security;
+
+drop policy if exists "history admin read" on public.ticket_history;
+create policy "history admin read" on public.ticket_history
+  for select using (auth.role() = 'authenticated');
+
+-- Registra automáticamente cada alta y cada cambio de estado.
+-- SECURITY DEFINER: el trigger escribe aunque el actor sea anónimo (reserva web).
+create or replace function public.log_ticket_movement()
+returns trigger language plpgsql security definer as $$
+begin
+  if tg_op = 'INSERT' then
+    insert into public.ticket_history (ticket_id, number, action, actor_id, detail)
+      values (new.id, new.number, new.status, new.created_by, new.source);
+    return new;
+  end if;
+  if tg_op = 'UPDATE' and new.status is distinct from old.status then
+    insert into public.ticket_history (ticket_id, number, action, actor_id, detail)
+      values (new.id, new.number, new.status,
+        coalesce(new.confirmed_by, new.cancelled_by, new.created_by),
+        new.cancel_reason);
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_ticket_history on public.tickets;
+create trigger trg_ticket_history
+  after insert or update on public.tickets
+  for each row execute function public.log_ticket_movement();
