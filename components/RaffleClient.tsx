@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  isValidNumber, suggestNumbers, packOptions, formatMoney, whatsappBatchLink,
+  isValidNumber, packOptions, formatMoney, quoteFor, whatsappBatchLink,
   type Promo
 } from "@/lib/tickets";
 import { createClient } from "@/lib/supabaseClient";
@@ -40,8 +40,6 @@ export default function RaffleClient(props: Props) {
   const [page, setPage] = useState(0);
   const [q, setQ] = useState("");
   const [highlight, setHighlight] = useState<number | null>(null);
-  const [suggest, setSuggest] = useState<number[]>([]);
-  const [showSuggest, setShowSuggest] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ nombre: "", apellido: "", dni: "", telefono: "" });
@@ -60,11 +58,20 @@ export default function RaffleClient(props: Props) {
 
   const freeOnPage = pageNumbers.filter((n) => !takenSet.has(n)).length;
 
+  // Cotización: pack fijo o (modo abierto) promo exacta / suma unitaria
+  const quote = pack.open ? quoteFor(selected.length, unitPrice, promos) : { total: pack.price, promo: null };
+  const canReserve = pack.open ? selected.length >= 1 : selected.length === pack.quantity;
+  const reserveLabel = pack.open && quote.promo
+    ? `${quote.promo.name} aplicada`
+    : pack.open
+      ? `${selected.length} número${selected.length === 1 ? "" : "s"}`
+      : pack.quantity === 1 ? "número" : `${pack.quantity} números`;
+
   const toggle = (n: number) => {
     if (takenSet.has(n)) return;
     setSelected((prev) => {
       if (prev.includes(n)) return prev.filter((x) => x !== n);
-      if (prev.length >= pack.quantity) return prev;
+      if (!pack.open && prev.length >= pack.quantity) return prev;
       return [...prev, n].sort((a, b) => a - b);
     });
   };
@@ -72,7 +79,7 @@ export default function RaffleClient(props: Props) {
   const choosePack = (id: string) => {
     const p = packs.find((x) => x.id === id) ?? packs[0];
     setPackId(p.id);
-    setSelected((prev) => prev.slice(0, p.quantity));
+    if (!p.open) setSelected((prev) => prev.slice(0, p.quantity));
   };
 
   const goToNumber = (n: number) => {
@@ -84,25 +91,22 @@ export default function RaffleClient(props: Props) {
     const n = parseInt(q, 10);
     setDone(false);
     setError("");
-    setShowSuggest(false);
     if (!isValidNumber(n, min, max)) {
       setError(`Ingresá un número entre ${min} y ${max}.`);
       return;
     }
     goToNumber(n);
-    if (takenSet.has(n)) {
-      setSuggest(suggestNumbers(n, takenSet, min, max));
-      setShowSuggest(true);
-    } else {
+    if (!takenSet.has(n)) {
       setSelected((prev) => {
-        if (prev.includes(n) || prev.length >= pack.quantity) return prev;
+        if (prev.includes(n)) return prev;
+        if (!pack.open && prev.length >= pack.quantity) return prev;
         return [...prev, n].sort((a, b) => a - b);
       });
     }
   };
 
   const reserve = async () => {
-    if (saving || selected.length !== pack.quantity) return;
+    if (saving || !canReserve) return;
     if (!form.nombre.trim() || !form.apellido.trim() || !form.dni.trim() || !form.telefono.trim()) {
       setError("Completá Nombre, Apellido, DNI y Teléfono.");
       return;
@@ -131,16 +135,22 @@ export default function RaffleClient(props: Props) {
   };
 
   const openModal = () => {
-    if (selected.length !== pack.quantity) return;
+    if (!canReserve) return;
     setDone(false);
     setError("");
     setShowModal(true);
   };
 
+  const waNumbers = done ? batch : selected;
+  const waPackName = !pack.open
+    ? (pack.quantity === 1 ? "Número elegido" : pack.name)
+    : quote.promo
+      ? quote.promo.name
+      : waNumbers.length === 1 ? "Número elegido" : "Números elegidos";
   const wa = whatsappBatchLink(whatsapp, {
-    numbers: done ? batch : selected,
-    packName: pack.quantity === 1 ? "Número elegido" : pack.name,
-    total: pack.price,
+    numbers: waNumbers,
+    packName: waPackName,
+    total: quote.total,
     currency,
     ...form
   });
@@ -180,22 +190,6 @@ export default function RaffleClient(props: Props) {
           </button>
         </div>
         {error && <p role="alert" className="mt-2 text-sm font-medium text-rose-500">{error}</p>}
-        {showSuggest && (
-          <div className="mt-4 animate-fade-up rounded-2xl border border-amber-500/30 bg-amber-50 p-4 dark:bg-amber-500/10">
-            <p className="font-semibold text-amber-800 dark:text-amber-200">Ese número está ocupado. Probá con estos libres:</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {suggest.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => { setQ(String(s)); setShowSuggest(false); setError(""); goToNumber(s); setSelected((prev) => prev.includes(s) || prev.length >= pack.quantity ? prev : [...prev, s].sort((a, b) => a - b)); }}
-                  className="tnum h-10 min-w-[3.5rem] rounded-xl border border-brand-200 bg-white px-3 font-bold text-brand-700 transition hover:border-brand-500 active:scale-95 dark:border-white/10 dark:bg-night-800 dark:text-brand-300"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Promos */}
@@ -285,22 +279,28 @@ export default function RaffleClient(props: Props) {
         <div className={`mt-4 rounded-2xl border p-4 transition ${selected.length > 0 ? "border-brand-500/40 bg-brand-50 dark:bg-brand-500/10" : "border-slate-100 dark:border-white/5"}`}>
           {selected.length === 0 ? (
             <p className="text-center text-sm text-slate-500 dark:text-slate-400">
-              Tocá hasta {pack.quantity} número{pack.quantity > 1 ? "s" : ""} ({pack.name} · {formatMoney(pack.price, currency)})
+              {pack.open
+                ? `Tocá los números que quieras (${pack.name} · ${formatMoney(pack.price, currency)} c/u)`
+                : `Tocá hasta ${pack.quantity} números (${pack.name} · ${formatMoney(pack.price, currency)})`}
             </p>
           ) : (
             <>
               <p className="text-sm">
-                <b>Elegidos ({selected.length}/{pack.quantity}):</b>{" "}
+                <b>Elegidos ({selected.length}{pack.open ? "" : `/${pack.quantity}`}):</b>{" "}
                 <span className="tnum font-num font-bold text-brand-700 dark:text-brand-300">{selected.join(" · ")}</span>
+              </p>
+              <p className="tnum mt-1 text-sm font-bold">
+                Total: {formatMoney(quote.total, currency)}
+                {quote.promo && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{quote.promo.name} aplicada</span>}
               </p>
               <div className="mt-3 flex items-center gap-2">
                 <button onClick={() => setSelected([])} className="h-12 rounded-xl border border-slate-300 px-4 text-sm font-semibold transition hover:bg-slate-50 dark:border-white/10 dark:hover:bg-night-800">
                   Limpiar
                 </button>
-                <button onClick={openModal} disabled={selected.length !== pack.quantity}
+                <button onClick={openModal} disabled={!canReserve}
                   className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-50">
                   <CheckIcon className="h-5 w-5" />
-                  Reservar · {formatMoney(pack.price, currency)}
+                  Reservar · {formatMoney(quote.total, currency)}
                 </button>
               </div>
             </>
@@ -314,7 +314,7 @@ export default function RaffleClient(props: Props) {
           <div className="max-h-[92dvh] w-full max-w-md animate-pop-in overflow-y-auto rounded-t-3xl bg-white shadow-card dark:bg-night-850 sm:rounded-3xl">
             <div className="bg-gradient-to-r from-brand-700 to-brand-500 px-5 py-4 text-white sm:px-6 sm:py-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium uppercase tracking-widest text-brand-100">Reservando {pack.quantity > 1 ? pack.name : ""}</p>
+                <p className="text-sm font-medium uppercase tracking-widest text-brand-100">Reservando {pack.open ? reserveLabel : pack.quantity > 1 ? pack.name : ""}</p>
                 <button onClick={() => setShowModal(false)} aria-label="Cerrar" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25">
                   <XIcon className="h-4 w-4" />
                 </button>
@@ -322,7 +322,7 @@ export default function RaffleClient(props: Props) {
               <p className="tnum mt-1 font-num text-3xl font-extrabold tracking-tight sm:text-4xl">
                 {(done ? batch : selected).join(" · ")}
               </p>
-              <p className="mt-1 text-sm font-semibold text-brand-100">Total: {formatMoney(pack.price, currency)}</p>
+              <p className="mt-1 text-sm font-semibold text-brand-100">Total: {formatMoney(quote.total, currency)}</p>
             </div>
 
             {!done ? (
@@ -347,7 +347,7 @@ export default function RaffleClient(props: Props) {
                 {error && <p role="alert" className="mt-3 text-sm font-medium text-rose-500">{error}</p>}
                 <button onClick={reserve} disabled={saving}
                   className="mt-4 h-12 w-full rounded-xl bg-brand-600 font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-60">
-                  {saving ? "Reservando…" : `Reservar ${pack.quantity > 1 ? pack.quantity + " números" : "número"}`}
+                  {saving ? "Reservando…" : `Reservar ${reserveLabel}`}
                 </button>
               </div>
             ) : (

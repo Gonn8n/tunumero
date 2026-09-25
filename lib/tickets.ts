@@ -58,17 +58,29 @@ export interface PackOption {
   name: string;
   quantity: number;
   price: number;
+  /** true = selección libre ("1 número": suma unitaria, promo si calza exacto) */
+  open: boolean;
 }
 
-/** Opciones de compra: 1 número a precio unitario + promos activas */
+/** Opciones de compra: 1 número abierto a precio unitario + promos activas */
 export function packOptions(unitPrice: number, currency: string, promos: Promo[]): PackOption[] {
   const opts: PackOption[] = [
-    { id: "single", name: "1 número", quantity: 1, price: Number(unitPrice) }
+    { id: "single", name: "1 número", quantity: 1, price: Number(unitPrice), open: true }
   ];
   for (const p of promos.filter((x) => x.active && x.quantity >= 2)) {
-    opts.push({ id: p.id, name: p.name, quantity: p.quantity, price: Number(p.price) });
+    opts.push({ id: p.id, name: p.name, quantity: p.quantity, price: Number(p.price), open: false });
   }
   return opts;
+}
+
+/** Cotización: si la cantidad calza exacto con una promo activa → precio promo (la más barata); si no, suma unitaria */
+export function quoteFor(count: number, unitPrice: number, promos: Promo[]): { total: number; promo: Promo | null } {
+  if (count <= 0) return { total: 0, promo: null };
+  const match = promos
+    .filter((p) => p.active && p.quantity === count)
+    .sort((a, b) => Number(a.price) - Number(b.price))[0] ?? null;
+  if (match) return { total: Number(match.price), promo: match };
+  return { total: count * Number(unitPrice), promo: null };
 }
 
 export function formatMoney(value: number, currency: string) {
