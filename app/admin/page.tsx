@@ -46,6 +46,7 @@ export default function AdminPanel() {
   const [adminNames, setAdminNames] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [histFilter, setHistFilter] = useState("");
+  const [myName, setMyName] = useState("");
   const [promos, setPromos] = useState<Promo[]>([]);
   const [newPromo, setNewPromo] = useState({ name: "Promo 3", quantity: 3, price: 5000 });
   const router = useRouter();
@@ -62,6 +63,7 @@ export default function AdminPanel() {
     setUserEmail(user.email ?? "");
     const { data: prof } = await supabase.from("admin_profiles").select("display_name").eq("user_id", user.id).single();
     if (prof?.display_name) setDisplayName(prof.display_name as string);
+    setMyName((prof?.display_name as string) ?? "");
     setChecking(false);
     const { data: profs } = await supabase.from("admin_profiles").select("user_id,display_name");
     if (profs) {
@@ -161,6 +163,28 @@ export default function AdminPanel() {
     }).eq("id", 1);
     say(error ? `Error al guardar: ${error.message}` : `Configuración guardada. Rango ${newMin}–${newMax} (${totalNumbers(newMin, newMax)} números).`, !error);
     if (!error) load();
+  };
+
+  const saveMyName = async () => {
+    const name = myName.trim();
+    if (!name) { say("Escribí tu nombre visible.", false); return; }
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    const { error } = await supabase.from("admin_profiles").upsert(
+      { user_id: user.id, display_name: name },
+      { onConflict: "user_id" }
+    );
+    say(error ? `Error: ${error.message}` : "Tu nombre visible se actualizó.", !error);
+    if (!error) {
+      setDisplayName(name);
+      const { data: profs } = await supabase.from("admin_profiles").select("user_id,display_name");
+      if (profs) {
+        const map: Record<string, string> = {};
+        for (const p of profs as { user_id: string; display_name: string }[]) map[p.user_id] = p.display_name;
+        setAdminNames(map);
+      }
+    }
   };
 
   const logout = async () => {
@@ -545,6 +569,26 @@ export default function AdminPanel() {
 
         {tab === "config" && (
           <section className="rounded-2xl border border-brand-100 bg-white p-5 shadow-card dark:border-white/10 dark:bg-night-850">
+            <h2 className="flex items-center gap-2 font-bold">
+              <UsersIcon className="h-5 w-5 text-brand-600 dark:text-brand-300" />
+              Mi perfil
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Este nombre se muestra como autor de tus confirmaciones. Sesión: {userEmail}
+            </p>
+            <div className="mt-3 flex gap-2">
+              <input
+                value={myName}
+                onChange={(e) => setMyName(e.target.value)}
+                placeholder="Ej: Nahuel Lami"
+                aria-label="Mi nombre visible"
+                className={`${inputCls} flex-1`}
+              />
+              <button onClick={saveMyName} className="h-12 shrink-0 rounded-xl bg-brand-600 px-5 text-sm font-bold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98]">
+                Guardar
+              </button>
+            </div>
+            <div className="mb-5 mt-6 border-t border-slate-100 pt-5 dark:border-white/5" />
             <h2 className="flex items-center gap-2 font-bold">
               <CogIcon className="h-5 w-5 text-brand-600 dark:text-brand-300" />
               Info del sorteo y cobro

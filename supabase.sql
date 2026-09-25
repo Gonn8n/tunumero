@@ -80,6 +80,15 @@ drop policy if exists "profiles admin read" on public.admin_profiles;
 create policy "profiles admin read" on public.admin_profiles
   for select using (auth.role() = 'authenticated');
 
+-- Cada admin puede crear/editar SOLO su propia fila (para el nombre visible desde el panel)
+drop policy if exists "profiles self insert" on public.admin_profiles;
+create policy "profiles self insert" on public.admin_profiles
+  for insert with check (auth.uid() = user_id);
+
+drop policy if exists "profiles self update" on public.admin_profiles;
+create policy "profiles self update" on public.admin_profiles
+  for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 insert into public.raffle_settings (id) values (1)
   on conflict (id) do nothing;
 
