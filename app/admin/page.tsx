@@ -304,8 +304,8 @@ export default function AdminPanel() {
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-[52px] items-center justify-between rounded-xl px-4 text-sm font-semibold transition lg:h-10 lg:justify-center lg:gap-1.5 lg:px-3.5 ${
-                tab === t.id ? "bg-brand-600 text-white shadow-glow" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-night-800"
+              className={`flex h-[52px] items-center justify-between rounded-xl border px-4 text-sm font-semibold transition lg:h-10 lg:justify-center lg:gap-1.5 lg:px-3.5 ${
+                tab === t.id ? "border-transparent bg-brand-600 text-white shadow-glow" : "border-slate-200 text-slate-500 hover:border-brand-300 hover:bg-slate-50 dark:border-white/10 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
               {t.label}
@@ -323,8 +323,8 @@ export default function AdminPanel() {
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-11 items-center justify-center gap-1.5 rounded-xl px-2 text-[13px] font-semibold transition lg:h-10 lg:px-3.5 lg:text-sm ${
-                tab === t.id ? "bg-brand-600 text-white shadow-glow" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-night-800"
+              className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[13px] font-semibold transition lg:h-10 lg:px-3.5 lg:text-sm ${
+                tab === t.id ? "border-transparent bg-brand-600 text-white shadow-glow" : "border-slate-200 text-slate-500 hover:border-brand-300 hover:bg-slate-50 dark:border-white/10 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
               {t.id === "reservar" && <PlusIcon className="h-4 w-4 shrink-0" />}
