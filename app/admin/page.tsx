@@ -244,10 +244,12 @@ export default function AdminPanel() {
             <div key={s.label} className={`${i < 2 ? "col-span-3" : "col-span-2"} overflow-hidden rounded-2xl bg-white text-slate-900 shadow-card lg:col-span-1 dark:bg-night-850 dark:text-white`}>
               <div className={`h-1 ${s.bar}`} />
               <div className="flex items-center gap-2 p-3">
-                <span className={s.ring}><s.icon className="h-5 w-5 shrink-0" /></span>
+                <span className={`${s.ring} ${i < 2 ? "" : "hidden min-[420px]:flex sm:flex"}`}>
+                  <s.icon className="h-5 w-5 shrink-0" />
+                </span>
                 <div className="min-w-0">
                   <p className="tnum font-num text-xl font-extrabold leading-none sm:text-2xl">{s.value}</p>
-                  <p className="mt-1 truncate text-[11px] font-medium text-slate-500 sm:text-xs dark:text-slate-400">{s.label}</p>
+                  <p className="mt-1 text-[10px] font-medium leading-tight text-slate-500 sm:text-xs dark:text-slate-400">{s.label}</p>
                 </div>
               </div>
             </div>
@@ -266,26 +268,42 @@ export default function AdminPanel() {
           </p>
         )}
 
-        <nav aria-label="Secciones del panel" className="flex flex-wrap gap-1.5 rounded-2xl border border-brand-100 bg-white p-1.5 dark:border-white/10 dark:bg-night-850">
-          {tabs.map((t) => (
+        <nav aria-label="Secciones del panel" className="rounded-2xl border border-brand-100 bg-white p-1.5 dark:border-white/10 dark:bg-night-850">
+          <div className="grid grid-cols-2 gap-1.5">
+          {tabs.filter((t) => ["pendiente", "reservado", "confirmado", "cancelado"].includes(t.id)).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition sm:h-10 sm:px-3.5 ${
+              className={`flex h-[52px] items-center justify-between rounded-xl px-4 text-sm font-semibold transition ${
                 tab === t.id ? "bg-brand-600 text-white shadow-glow" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
-              {t.id === "reservar" && <PlusIcon className="h-4 w-4" />}
-              {t.id === "config" && <CogIcon className="h-4 w-4" />}
               {t.label}
               {t.count !== undefined && (
-                <span className={`tnum rounded-full px-1.5 text-xs ${tab === t.id ? "bg-white/20" : "bg-slate-100 dark:bg-night-700"}`}>
+                <span className={`tnum rounded-full px-2 py-0.5 text-xs ${tab === t.id ? "bg-white/20" : "bg-slate-100 dark:bg-night-700"}`}>
                   {t.count}
                 </span>
               )}
             </button>
           ))}
+          </div>
+          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+          {tabs.filter((t) => ["historial", "reservar", "config"].includes(t.id)).map((t) => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              aria-current={tab === t.id ? "page" : undefined}
+              className={`flex h-11 items-center justify-center gap-1.5 rounded-xl px-2 text-[13px] font-semibold transition ${
+                tab === t.id ? "bg-brand-600 text-white shadow-glow" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-night-800"
+              }`}
+            >
+              {t.id === "reservar" && <PlusIcon className="h-4 w-4 shrink-0" />}
+              {t.id === "config" && <CogIcon className="h-4 w-4 shrink-0" />}
+              {t.label}
+            </button>
+          ))}
+          </div>
         </nav>
 
         {tab === "historial" && (
