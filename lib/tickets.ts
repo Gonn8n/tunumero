@@ -44,6 +44,53 @@ export interface RaffleSettings {
   max_number: number;
 }
 
+export interface Promo {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+  active: boolean;
+  sort_order: number;
+}
+
+export interface PackOption {
+  id: string;
+  name: string;
+  quantity: number;
+  price: number;
+}
+
+/** Opciones de compra: 1 número a precio unitario + promos activas */
+export function packOptions(unitPrice: number, currency: string, promos: Promo[]): PackOption[] {
+  const opts: PackOption[] = [
+    { id: "single", name: "1 número", quantity: 1, price: Number(unitPrice) }
+  ];
+  for (const p of promos.filter((x) => x.active && x.quantity >= 2)) {
+    opts.push({ id: p.id, name: p.name, quantity: p.quantity, price: Number(p.price) });
+  }
+  return opts;
+}
+
+export function formatMoney(value: number, currency: string) {
+  return `$${Number(value).toLocaleString("es-AR")} ${currency}`;
+}
+
+/** WhatsApp para reserva múltiple: lista números + total + datos */
+export function whatsappBatchLink(
+  adminNumber: string,
+  t: { numbers: number[]; packName: string; total: number; currency: string; nombre: string; apellido: string; dni: string; telefono: string }
+) {
+  const msg =
+    `Hola! Quiero participar del sorteo.%0A` +
+    `${encodeURIComponent(t.packName)}: ${t.numbers.join(", ")}%0A` +
+    `Total: $${Number(t.total).toLocaleString("es-AR")} ${encodeURIComponent(t.currency)}%0A` +
+    `Nombre: ${encodeURIComponent(t.nombre)} ${encodeURIComponent(t.apellido)}%0A` +
+    `DNI: ${encodeURIComponent(t.dni)}%0A` +
+    `Tel: ${encodeURIComponent(t.telefono)}`;
+  const clean = adminNumber.replace(/\D/g, "");
+  return `https://wa.me/${clean}?text=${msg}`;
+}
+
 export function isValidNumber(n: number, min = MIN_NUMBER, max = MAX_NUMBER) {
   return Number.isInteger(n) && n >= min && n <= max;
 }

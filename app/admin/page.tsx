@@ -1,12 +1,13 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabaseClient";
 import ThemeToggle from "@/components/ThemeToggle";
 import PhotoManager from "@/components/PhotoManager";
+import PromoManager from "@/components/PromoManager";
 import DownloadExcel from "@/components/DownloadExcel";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, type Ticket } from "@/lib/tickets";
+import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, type Ticket, type Promo } from "@/lib/tickets";
 import {
   CheckIcon, ChatIcon, ClockIcon, CogIcon, LogoutIcon, PlusIcon,
   ShieldIcon, TicketIcon, UsersIcon, XIcon
@@ -45,6 +46,8 @@ export default function AdminPanel() {
   const [adminNames, setAdminNames] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [histFilter, setHistFilter] = useState("");
+  const [promos, setPromos] = useState<Promo[]>([]);
+  const [newPromo, setNewPromo] = useState({ name: "Promo 3", quantity: 3, price: 5000 });
   const router = useRouter();
 
   const say = (text: string, ok = true) => { setMsg(text); setMsgOk(ok); };
@@ -72,6 +75,8 @@ export default function AdminPanel() {
     if (tk) setTickets(tk as Ticket[]);
     const { data: hist } = await supabase.from("ticket_history").select("*").order("created_at", { ascending: false }).limit(300);
     if (hist) setHistory(hist as HistoryEntry[]);
+    const { data: pr } = await supabase.from("promos").select("*").order("sort_order", { ascending: true });
+    if (pr) setPromos(pr as Promo[]);
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
     if (s) setSettings({
       title: s.title ?? "", subtitle: s.subtitle ?? "", description: s.description ?? "",
@@ -609,6 +614,7 @@ export default function AdminPanel() {
             <button onClick={saveSettings} className="mt-4 h-12 rounded-xl bg-brand-600 px-6 font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98]">
               Guardar cambios
             </button>
+            <PromoManager promos={promos} newPromo={newPromo} setNewPromo={setNewPromo} reload={load} say={say} />
             <PhotoManager onMessage={say} />
           </section>
         )}

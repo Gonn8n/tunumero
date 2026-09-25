@@ -1,9 +1,9 @@
 import { createServerSupabase } from "@/lib/supabaseServer";
-import SearchNumber from "@/components/SearchNumber";
+import RaffleClient from "@/components/RaffleClient";
 import PhotoGallery, { type GalleryPhoto } from "@/components/PhotoGallery";
 import ThemeToggle from "@/components/ThemeToggle";
 import Link from "next/link";
-import { totalNumbers, MIN_NUMBER, MAX_NUMBER } from "@/lib/tickets";
+import { totalNumbers, MIN_NUMBER, MAX_NUMBER, type Promo } from "@/lib/tickets";
 import { CalendarIcon, CashIcon, ShieldIcon, TicketIcon } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
@@ -28,22 +28,40 @@ export default async function Home() {
   let settings = FALLBACK;
   let taken: number[] = [];
   let photos: GalleryPhoto[] = [];
+  let promos: Promo[] = [];
   try {
     const supabase = createServerSupabase();
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
     if (s) settings = { ...FALLBACK, ...s };
-    const { data: t } = await supabase
-      .from("tickets")
-      .select("number")
-      .in("status", ["pendiente", "reservado", "confirmado"])
-      .range(0, 6000);
-    if (t) taken = t.map((r: { number: number }) => r.number);
+    const min0 = Number((s as { min_number?: number } | null)?.min_number ?? MIN_NUMBER);
+    const max0 = Number((s as { max_number?: number } | null)?.max_number ?? MAX_NUMBER);
+    // Ocupados por chunks de 1000 (robusto aunque el rango crezca)
+    const CHUNK = 1000;
+    for (let from = 0; ; from += CHUNK) {
+      const { data: t } = await supabase
+        .from("tickets")
+        .select("number")
+        .in("status", ["pendiente", "reservado", "confirmado"])
+        .gte("number", min0)
+        .lte("number", max0)
+        .order("number")
+        .range(from, from + CHUNK - 1);
+      if (!t || t.length === 0) break;
+      taken.push(...t.map((r: { number: number }) => r.number));
+      if (t.length < CHUNK) break;
+    }
     const { data: img } = await supabase
       .from("raffle_images")
       .select("id,image_url,sort_order")
       .order("sort_order", { ascending: true })
       .limit(3);
     if (img) photos = img as GalleryPhoto[];
+    const { data: pr } = await supabase
+      .from("promos")
+      .select("*")
+      .eq("active", true)
+      .order("sort_order", { ascending: true });
+    if (pr) promos = pr as Promo[];
   } catch {
     /* sin env/Supabase: usa fallback para poder ver el diseño */
   }
@@ -132,7 +150,7 @@ export default async function Home() {
       <main className="mx-auto max-w-3xl space-y-4 p-4 pb-16">
         <PhotoGallery photos={photos} />
         <section className="-mt-2 animate-fade-up" style={{ animationDelay: "120ms" }}>
-          <SearchNumber
+          <RaffleClient
             taken={taken}
             whatsapp={settings.whatsapp_number}
             min={min}
@@ -141,6 +159,9 @@ export default async function Home() {
             cuit={settings.transfer_cbu ?? "—"}
             titular={settings.transfer_holder ?? "—"}
             bank={settings.transfer_bank ?? "—"}
+            unitPrice={Number(settings.ticket_price)}
+            currency={settings.currency}
+            promos={promos}
           />
         </section>
 

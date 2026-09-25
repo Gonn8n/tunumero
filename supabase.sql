@@ -224,3 +224,33 @@ drop trigger if exists trg_ticket_history on public.tickets;
 create trigger trg_ticket_history
   after insert or update on public.tickets
   for each row execute function public.log_ticket_movement();
+
+-- ============ PROMOS (packs configurables, ej. 3 x $5000) ============
+
+create table if not exists public.promos (
+  id uuid primary key default gen_random_uuid(),
+  name text not null default 'Promo',
+  quantity int not null check (quantity >= 2 and quantity <= 100),
+  price numeric(12,2) not null check (price >= 0),
+  active boolean not null default true,
+  sort_order int not null default 0,
+  created_at timestamptz default now()
+);
+
+alter table public.promos enable row level security;
+
+drop policy if exists "promos public read" on public.promos;
+create policy "promos public read" on public.promos for select using (true);
+
+drop policy if exists "promos admin all" on public.promos;
+create policy "promos admin all" on public.promos
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- Lote de reserva múltiple (agrupa los números de una misma compra)
+alter table public.tickets add column if not exists batch_id uuid;
+create index if not exists tickets_batch_idx on public.tickets (batch_id);
+
+-- Promo de ejemplo (solo si no hay ninguna)
+insert into public.promos (name, quantity, price, sort_order)
+  select 'Promo 3', 3, 5000, 0
+  where not exists (select 1 from public.promos);
