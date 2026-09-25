@@ -21,7 +21,14 @@ export default function AdminLogin() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
-      setError("Credenciales inválidas. Revisá email y contraseña.");
+      const msg = error.message.toLowerCase();
+      if (msg.includes("email not confirmed") || msg.includes("confirmation")) {
+        setError("Este usuario aún no confirmó su email. Pedile al administrador que lo confirme desde Supabase → Authentication → Users.");
+      } else if (msg.includes("invalid") || msg.includes("credentials")) {
+        setError("Email o contraseña incorrectos.");
+      } else {
+        setError(`No se pudo ingresar: ${error.message}`);
+      }
       return;
     }
     router.push("/admin");
