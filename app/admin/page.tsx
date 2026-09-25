@@ -297,33 +297,33 @@ export default function AdminPanel() {
           </p>
         )}
 
-        <nav aria-label="Secciones del panel" className="rounded-2xl border border-brand-100 bg-white p-1.5 dark:border-white/10 dark:bg-night-850">
-          <div className="grid grid-cols-2 gap-1.5">
+        <nav aria-label="Secciones del panel" className="rounded-2xl border border-brand-100 bg-white p-1.5 lg:flex lg:items-center lg:gap-1 dark:border-white/10 dark:bg-night-850">
+          <div className="grid grid-cols-2 gap-1.5 lg:contents">
           {tabs.filter((t) => ["pendiente", "reservado", "confirmado", "cancelado"].includes(t.id)).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-[52px] items-center justify-between rounded-xl px-4 text-sm font-semibold transition ${
+              className={`flex h-[52px] items-center justify-between rounded-xl px-4 text-sm font-semibold transition lg:h-10 lg:justify-center lg:gap-1.5 lg:px-3.5 ${
                 tab === t.id ? "bg-brand-600 text-white shadow-glow" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
               {t.label}
               {t.count !== undefined && (
-                <span className={`tnum rounded-full px-2 py-0.5 text-xs ${tab === t.id ? "bg-white/20" : "bg-slate-100 dark:bg-night-700"}`}>
+                <span className={`tnum rounded-full px-2 py-0.5 text-xs lg:px-1.5 ${tab === t.id ? "bg-white/20" : "bg-slate-100 dark:bg-night-700"}`}>
                   {t.count}
                 </span>
               )}
             </button>
           ))}
           </div>
-          <div className="mt-1.5 grid grid-cols-3 gap-1.5">
+          <div className="mt-1.5 grid grid-cols-3 gap-1.5 lg:mt-0 lg:contents">
           {tabs.filter((t) => ["historial", "reservar", "config"].includes(t.id)).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-11 items-center justify-center gap-1.5 rounded-xl px-2 text-[13px] font-semibold transition ${
+              className={`flex h-11 items-center justify-center gap-1.5 rounded-xl px-2 text-[13px] font-semibold transition lg:h-10 lg:px-3.5 lg:text-sm ${
                 tab === t.id ? "bg-brand-600 text-white shadow-glow" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
