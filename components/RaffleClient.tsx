@@ -310,8 +310,8 @@ export default function RaffleClient(props: Props) {
 
       {/* Modal reserva */}
       {showModal && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-night-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-          <div className="max-h-[92dvh] w-full max-w-md animate-pop-in overflow-y-auto rounded-t-3xl bg-white shadow-card dark:bg-night-850 sm:rounded-3xl">
+        <div className="fixed inset-0 z-[100] grid place-items-end justify-items-center bg-night-950/70 p-0 backdrop-blur-sm sm:place-items-center sm:p-4">
+          <div className="max-h-[92dvh] w-full min-w-0 max-w-md animate-pop-in overflow-y-auto rounded-t-3xl bg-white shadow-card dark:bg-night-850 sm:rounded-3xl">
             <div className="bg-gradient-to-r from-brand-700 to-brand-500 px-5 py-4 text-white sm:px-6 sm:py-5">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium uppercase tracking-widest text-brand-100">Reservando {pack.open ? reserveLabel : pack.quantity > 1 ? pack.name : ""}</p>
@@ -319,7 +319,7 @@ export default function RaffleClient(props: Props) {
                   <XIcon className="h-4 w-4" />
                 </button>
               </div>
-              <p className="tnum mt-1 font-num text-3xl font-extrabold tracking-tight sm:text-4xl">
+              <p className="tnum mt-1 break-words font-num text-3xl font-extrabold tracking-tight sm:text-4xl">
                 {(done ? batch : selected).join(" · ")}
               </p>
               <p className="mt-1 text-sm font-semibold text-brand-100">Total: {formatMoney(quote.total, currency)}</p>
