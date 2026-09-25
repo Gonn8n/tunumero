@@ -194,20 +194,20 @@ export default function RaffleClient(props: Props) {
 
       {/* Promos */}
       {packs.length > 1 && (
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
           {packs.map((p) => (
             <button
               key={p.id}
               onClick={() => choosePack(p.id)}
               aria-pressed={packId === p.id}
-              className={`flex h-12 items-center gap-2 rounded-2xl border px-4 text-sm font-bold transition active:scale-95 ${
+              className={`flex h-11 items-center justify-center gap-1.5 truncate rounded-2xl border px-2 text-[13px] font-bold transition active:scale-95 sm:h-12 sm:px-4 sm:text-sm ${
                 packId === p.id
                   ? "border-brand-600 bg-brand-600 text-white shadow-glow"
                   : "border-brand-200 bg-white text-brand-800 dark:border-white/10 dark:bg-night-850 dark:text-brand-200"
               }`}
             >
-              <TicketIcon className="h-4 w-4" />
-              {p.name} · {formatMoney(p.price, currency)}
+              <TicketIcon className="h-4 w-4 shrink-0" />
+              <span className="truncate">{p.name} · {formatMoney(p.price, currency)}</span>
             </button>
           ))}
         </div>
