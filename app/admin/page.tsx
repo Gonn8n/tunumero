@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabaseClient";
 import ThemeToggle from "@/components/ThemeToggle";
 import PhotoManager from "@/components/PhotoManager";
+import DownloadExcel from "@/components/DownloadExcel";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, type Ticket } from "@/lib/tickets";
@@ -44,6 +45,7 @@ export default function AdminPanel() {
   const [adminNames, setAdminNames] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [histFilter, setHistFilter] = useState("");
+  const activeTabRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
 
   const say = (text: string, ok = true) => { setMsg(text); setMsgOk(ok); };
@@ -83,6 +85,10 @@ export default function AdminPanel() {
   };
 
   useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    activeTabRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+  }, [tab]);
 
   const count = (st: string) => tickets.filter((t) => t.status === st).length;
   const rMin = Number(settings.min_number ?? 0);
@@ -218,27 +224,29 @@ export default function AdminPanel() {
       <div className="relative overflow-hidden bg-gradient-to-b from-brand-800 to-brand-600 pb-6 text-white">
         <div className="bg-blueprint absolute inset-0" aria-hidden="true" />
         <header className="relative mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 p-4">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/15 backdrop-blur" aria-label="Volver al sitio">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link href="/" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white/15 backdrop-blur" aria-label="Volver al sitio">
               <TicketIcon className="h-5 w-5" />
             </Link>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-lg font-extrabold leading-tight tracking-tight">Panel Admin</h1>
-              <p className="tnum truncate text-xs text-brand-100">{displayName || userEmail}</p>
+              <p className="tnum max-w-[140px] truncate text-xs text-brand-100 sm:max-w-[220px]">{displayName || userEmail}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <ThemeToggle />
-            <button onClick={logout} className="flex h-11 items-center gap-2 rounded-full border border-white/25 bg-white/10 px-4 text-sm font-semibold backdrop-blur transition hover:bg-white/20">
+            <button onClick={logout} aria-label="Cerrar sesión"
+              className="flex h-11 w-11 items-center justify-center rounded-full border border-white/25 bg-white/10 backdrop-blur transition hover:bg-white/20 sm:w-auto sm:px-4 sm:text-sm sm:font-semibold">
               <LogoutIcon className="h-4 w-4" />
-              Salir
+              <span className="hidden sm:inline sm:pl-2">Salir</span>
             </button>
           </div>
         </header>
 
-        <section className="relative mx-auto grid max-w-5xl grid-cols-2 gap-2 px-4 sm:grid-cols-3 lg:grid-cols-5">
+        <section className="relative mx-auto max-w-5xl px-4">
+          <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5">
           {stats.map((s) => (
-            <div key={s.label} className="overflow-hidden rounded-2xl bg-white text-slate-900 shadow-card dark:bg-night-850 dark:text-white">
+            <div key={s.label} className="w-[46%] shrink-0 snap-start overflow-hidden rounded-2xl bg-white text-slate-900 shadow-card dark:bg-night-850 dark:text-white sm:w-auto">
               <div className={`h-1 ${s.bar}`} />
               <div className="flex items-center gap-2.5 p-3.5">
                 <span className={s.ring}><s.icon className="h-5 w-5" /></span>
@@ -249,6 +257,7 @@ export default function AdminPanel() {
               </div>
             </div>
           ))}
+          </div>
         </section>
       </div>
 
@@ -266,6 +275,7 @@ export default function AdminPanel() {
           {tabs.map((t) => (
             <button
               key={t.id}
+              ref={tab === t.id ? activeTabRef : undefined}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
               className={`flex h-10 shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-sm font-semibold transition ${
@@ -296,7 +306,33 @@ export default function AdminPanel() {
                 className="h-11 w-full rounded-xl border border-slate-300 bg-white px-4 sm:max-w-xs dark:border-white/10 dark:bg-night-800"
               />
             </div>
-            <div className="overflow-x-auto">
+            <div className="space-y-2 p-3 sm:hidden">
+              {histRows.map((h) => (
+                <article key={h.id} className="rounded-xl border border-slate-100 p-3 dark:border-white/5">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="tnum font-num text-xl font-extrabold text-brand-700 dark:text-brand-300">{h.number}</p>
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-bold ${
+                      h.action === "confirmado" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                      : h.action === "cancelado" ? "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"
+                      : h.action === "reservado" ? "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300"
+                      : "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+                    }`}>
+                      {h.action === "pendiente" ? "Reserva web" : h.action === "reservado" ? "Reserva admin" : h.action}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-xs text-slate-500 dark:text-slate-400">
+                    {new Date(h.created_at).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })}
+                    {" · "}
+                    {h.actor_id && adminNames[h.actor_id] ? adminNames[h.actor_id] : h.actor_id ? "Admin" : "Cliente web"}
+                    {h.detail && h.action === "cancelado" ? ` · Motivo: ${h.detail}` : ""}
+                  </p>
+                </article>
+              ))}
+              {histRows.length === 0 && (
+                <p className="p-4 text-center text-sm text-slate-400">Sin movimientos todavía.</p>
+              )}
+            </div>
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wider text-slate-400 dark:border-white/5">
@@ -340,8 +376,14 @@ export default function AdminPanel() {
           </div>
         )}
 
+        {(tab === "pendiente" || tab === "reservado" || tab === "confirmado" || tab === "cancelado") && (
+          <div className="sm:flex sm:justify-end">
+            <DownloadExcel tickets={rows} tab={tab} adminNames={adminNames} />
+          </div>
+        )}
+
         {(tab !== "reservar" && tab !== "config" && tab !== "historial") && (
-          <div className="overflow-x-auto rounded-2xl border border-brand-100 bg-white shadow-card dark:border-white/10 dark:bg-night-850">
+          <div className="hidden overflow-x-auto rounded-2xl border border-brand-100 bg-white shadow-card sm:block dark:border-white/10 dark:bg-night-850">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wider text-slate-400 dark:border-white/5">
@@ -400,6 +442,55 @@ export default function AdminPanel() {
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {(tab !== "reservar" && tab !== "config" && tab !== "historial") && (
+          <div className="space-y-2 sm:hidden">
+            {rows.map((t) => (
+              <article key={t.id} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-card dark:border-white/10 dark:bg-night-850">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="tnum font-num text-2xl font-extrabold leading-none text-brand-700 dark:text-brand-300">{t.number}</p>
+                    <p className="mt-1.5 truncate font-semibold">{t.nombre} {t.apellido}</p>
+                    {t.status === "confirmado" && t.confirmed_by && adminNames[t.confirmed_by] && (
+                      <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">
+                        Conf. por {adminNames[t.confirmed_by]}
+                      </p>
+                    )}
+                  </div>
+                  <a
+                    href={adminWhatsappLink(t)}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label={`Escribir a ${t.nombre} ${t.apellido} por WhatsApp`}
+                    className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1faa55]/10 text-[#1faa55]"
+                  >
+                    <ChatIcon className="h-5 w-5" />
+                  </a>
+                </div>
+                <p className="tnum mt-2 text-sm text-slate-500 dark:text-slate-400">DNI {t.dni} · {t.telefono}</p>
+                <div className="mt-3 flex gap-2">
+                  {(tab === "pendiente" || tab === "reservado") && (
+                    <button onClick={() => act(t.id, "confirm")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 font-semibold text-white transition hover:bg-emerald-700 active:scale-[.98]">
+                      <CheckIcon className="h-4 w-4" />
+                      Confirmar
+                    </button>
+                  )}
+                  {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
+                    <button onClick={() => act(t.id, "cancel")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-200 font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-[.98] dark:border-rose-500/30 dark:text-rose-300">
+                      <XIcon className="h-4 w-4" />
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+              </article>
+            ))}
+            {rows.length === 0 && (
+              <p className="rounded-2xl border border-brand-100 bg-white p-6 text-center text-slate-400 dark:border-white/10 dark:bg-night-850">
+                Sin registros en esta sección.
+              </p>
+            )}
           </div>
         )}
 
