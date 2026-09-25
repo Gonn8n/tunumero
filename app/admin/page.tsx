@@ -45,7 +45,6 @@ export default function AdminPanel() {
   const [adminNames, setAdminNames] = useState<Record<string, string>>({});
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [histFilter, setHistFilter] = useState("");
-  const activeTabRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
 
   const say = (text: string, ok = true) => { setMsg(text); setMsgOk(ok); };
@@ -85,10 +84,6 @@ export default function AdminPanel() {
   };
 
   useEffect(() => { load(); }, []);
-
-  useEffect(() => {
-    activeTabRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [tab]);
 
   const count = (st: string) => tickets.filter((t) => t.status === st).length;
   const rMin = Number(settings.min_number ?? 0);
@@ -244,15 +239,15 @@ export default function AdminPanel() {
         </header>
 
         <section className="relative mx-auto max-w-5xl px-4">
-          <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 sm:grid sm:grid-cols-3 sm:overflow-visible lg:grid-cols-5">
-          {stats.map((s) => (
-            <div key={s.label} className="w-[46%] shrink-0 snap-start overflow-hidden rounded-2xl bg-white text-slate-900 shadow-card dark:bg-night-850 dark:text-white sm:w-auto">
+          <div className="grid grid-cols-6 gap-2 lg:grid-cols-5">
+          {stats.map((s, i) => (
+            <div key={s.label} className={`${i < 2 ? "col-span-3" : "col-span-2"} overflow-hidden rounded-2xl bg-white text-slate-900 shadow-card lg:col-span-1 dark:bg-night-850 dark:text-white`}>
               <div className={`h-1 ${s.bar}`} />
-              <div className="flex items-center gap-2.5 p-3.5">
-                <span className={s.ring}><s.icon className="h-5 w-5" /></span>
-                <div>
-                  <p className="tnum font-num text-2xl font-extrabold leading-none">{s.value}</p>
-                  <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">{s.label}</p>
+              <div className="flex items-center gap-2 p-3">
+                <span className={s.ring}><s.icon className="h-5 w-5 shrink-0" /></span>
+                <div className="min-w-0">
+                  <p className="tnum font-num text-xl font-extrabold leading-none sm:text-2xl">{s.value}</p>
+                  <p className="mt-1 truncate text-[11px] font-medium text-slate-500 sm:text-xs dark:text-slate-400">{s.label}</p>
                 </div>
               </div>
             </div>
@@ -271,14 +266,13 @@ export default function AdminPanel() {
           </p>
         )}
 
-        <nav aria-label="Secciones del panel" className="flex gap-1 overflow-x-auto rounded-2xl border border-brand-100 bg-white p-1.5 dark:border-white/10 dark:bg-night-850">
+        <nav aria-label="Secciones del panel" className="flex flex-wrap gap-1.5 rounded-2xl border border-brand-100 bg-white p-1.5 dark:border-white/10 dark:bg-night-850">
           {tabs.map((t) => (
             <button
               key={t.id}
-              ref={tab === t.id ? activeTabRef : undefined}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-10 shrink-0 items-center gap-1.5 rounded-xl px-3.5 text-sm font-semibold transition ${
+              className={`flex h-11 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition sm:h-10 sm:px-3.5 ${
                 tab === t.id ? "bg-brand-600 text-white shadow-glow" : "text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
