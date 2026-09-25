@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeftIcon, ChevronRightIcon, ImageIcon, XIcon } from "./icons";
 
@@ -11,6 +11,7 @@ export interface GalleryPhoto {
 
 export default function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
   const [open, setOpen] = useState<number | null>(null);
+  const touchX = useRef<number | null>(null);
 
   const close = useCallback(() => setOpen(null), []);
   const step = useCallback(
@@ -70,7 +71,7 @@ export default function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
           <button
             onClick={close}
             aria-label="Cerrar"
-            className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25"
+            className="absolute right-4 top-4 z-10 flex h-11 w-11 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25"
           >
             <XIcon className="h-5 w-5" />
           </button>
@@ -80,21 +81,30 @@ export default function PhotoGallery({ photos }: { photos: GalleryPhoto[] }) {
               <button
                 onClick={(e) => { e.stopPropagation(); step(-1); }}
                 aria-label="Foto anterior"
-                className="absolute left-2 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:left-6"
+                className="absolute left-2 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:left-6"
               >
                 <ChevronLeftIcon className="h-6 w-6" />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); step(1); }}
                 aria-label="Foto siguiente"
-                className="absolute right-2 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:right-6"
+                className="absolute right-2 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/15 text-white transition hover:bg-white/25 sm:right-6"
               >
                 <ChevronRightIcon className="h-6 w-6" />
               </button>
             </>
           )}
 
-          <figure className="max-h-full animate-pop-in" onClick={(e) => e.stopPropagation()}>
+          <figure className="max-h-full animate-pop-in touch-pan-y"
+            onClick={(e) => e.stopPropagation()}
+            onTouchStart={(e) => { touchX.current = e.touches[0].clientX; }}
+            onTouchEnd={(e) => {
+              if (touchX.current === null) return;
+              const dx = e.changedTouches[0].clientX - touchX.current;
+              touchX.current = null;
+              if (Math.abs(dx) > 40 && photos.length > 1) step(dx < 0 ? 1 : -1);
+            }}
+          >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={photos[open].image_url}
