@@ -12,12 +12,15 @@ interface Props {
   min: number;
   max: number;
   alias: string;
+  cuit: string;
+  titular: string;
+  bank: string;
 }
 
 const inputCls =
   "h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-slate-900 placeholder:text-slate-400 transition focus:border-brand-500 dark:border-white/10 dark:bg-night-800 dark:text-white dark:placeholder:text-slate-500";
 
-export default function SearchNumber({ taken, whatsapp, min, max, alias }: Props) {
+export default function SearchNumber({ taken, whatsapp, min, max, alias, cuit, titular, bank }: Props) {
   const supabase = createClient();
   const takenSet = new Set(taken);
   const [q, setQ] = useState("");
@@ -75,10 +78,10 @@ export default function SearchNumber({ taken, whatsapp, min, max, alias }: Props
   const wa = num !== null ? whatsappLink(whatsapp, { number: num, ...form }) : "#";
 
   const fields = [
-    { key: "nombre", label: "Nombre", auto: "given-name" },
-    { key: "apellido", label: "Apellido", auto: "family-name" },
-    { key: "dni", label: "DNI", auto: "off" },
-    { key: "telefono", label: "Teléfono", auto: "tel" }
+    { key: "nombre", label: "Nombre", auto: "given-name", numeric: false },
+    { key: "apellido", label: "Apellido", auto: "family-name", numeric: false },
+    { key: "dni", label: "DNI", auto: "off", numeric: true },
+    { key: "telefono", label: "Teléfono", auto: "tel", numeric: true }
   ] as const;
 
   return (
@@ -152,18 +155,19 @@ export default function SearchNumber({ taken, whatsapp, min, max, alias }: Props
       {showModal && num !== null && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-night-950/70 p-0 backdrop-blur-sm sm:items-center sm:p-4">
           <div className="w-full max-w-md animate-pop-in overflow-hidden rounded-t-3xl bg-white shadow-card dark:bg-night-850 sm:rounded-3xl">
-            <div className="bg-gradient-to-r from-brand-700 to-brand-500 px-6 py-5 text-white">
+            <div className="max-h-[92dvh] overflow-y-auto">
+            <div className="bg-gradient-to-r from-brand-700 to-brand-500 px-5 py-4 text-white sm:px-6 sm:py-5">
               <div className="flex items-center justify-between">
                 <p className="text-sm font-medium uppercase tracking-widest text-brand-100">Reservando</p>
                 <button onClick={() => setShowModal(false)} aria-label="Cerrar" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25">
                   <XIcon className="h-4 w-4" />
                 </button>
               </div>
-              <p className="tnum mt-1 font-num text-5xl font-extrabold tracking-tight">N° {num}</p>
+              <p className="tnum mt-1 font-num text-4xl font-extrabold tracking-tight sm:text-5xl">N° {num}</p>
             </div>
 
             {!done ? (
-              <div className="p-6">
+              <div className="p-5 sm:p-6">
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   {fields.map((f) => (
                     <label key={f.key} className="block text-sm font-medium">
@@ -171,8 +175,12 @@ export default function SearchNumber({ taken, whatsapp, min, max, alias }: Props
                       <input
                         value={form[f.key]}
                         autoComplete={f.auto}
-                        onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                        className={`${inputCls} mt-1 h-11 text-base`}
+                        inputMode={f.numeric ? "numeric" : undefined}
+                        onChange={(e) => setForm({
+                          ...form,
+                          [f.key]: f.numeric ? e.target.value.replace(/\D/g, "") : e.target.value
+                        })}
+                        className={`${inputCls} mt-1 h-12 text-base`}
                       />
                     </label>
                   ))}
@@ -204,6 +212,18 @@ export default function SearchNumber({ taken, whatsapp, min, max, alias }: Props
                   </div>
                   <CopyButton text={alias} label="Alias" />
                 </div>
+                <dl className="mt-2 divide-y divide-slate-100 rounded-xl border border-slate-100 px-4 text-left text-sm dark:divide-white/5 dark:border-white/10">
+                  {[
+                    { label: "CUIT", value: cuit },
+                    { label: "Titular", value: titular },
+                    { label: "Banco / Billetera", value: bank }
+                  ].map((r) => (
+                    <div key={r.label} className="flex items-center justify-between gap-3 py-2">
+                      <dt className="text-xs font-medium uppercase tracking-wider text-slate-400">{r.label}</dt>
+                      <dd className="tnum truncate font-mono text-xs font-semibold">{r.value}</dd>
+                    </div>
+                  ))}
+                </dl>
                 <a
                   href={wa}
                   target="_blank"
@@ -218,6 +238,7 @@ export default function SearchNumber({ taken, whatsapp, min, max, alias }: Props
                 </button>
               </div>
             )}
+            </div>
           </div>
         </div>,
         document.body

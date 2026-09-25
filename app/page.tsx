@@ -1,11 +1,10 @@
 import { createServerSupabase } from "@/lib/supabaseServer";
 import SearchNumber from "@/components/SearchNumber";
-import CopyButton from "@/components/CopyButton";
 import PhotoGallery, { type GalleryPhoto } from "@/components/PhotoGallery";
 import ThemeToggle from "@/components/ThemeToggle";
 import Link from "next/link";
 import { totalNumbers, MIN_NUMBER, MAX_NUMBER } from "@/lib/tickets";
-import { BankIcon, CalendarIcon, CashIcon, ShieldIcon, TicketIcon } from "@/components/icons";
+import { CalendarIcon, CashIcon, ShieldIcon, TicketIcon } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
 
@@ -59,13 +58,6 @@ export default async function Home() {
   const inRange = new Set(taken.filter((n) => n >= min && n <= max));
   const disponibles = total - inRange.size;
   const price = `$${Number(settings.ticket_price).toLocaleString("es-AR")}`;
-
-  const transferRows = [
-    { label: "Alias", value: settings.alias ?? "—", copy: true },
-    { label: "CUIT", value: settings.transfer_cbu ?? "—", copy: false },
-    { label: "Titular", value: settings.transfer_holder ?? "—", copy: false },
-    { label: "Banco / Billetera", value: settings.transfer_bank ?? "—", copy: false }
-  ];
 
   return (
     <div className="min-h-dvh">
@@ -140,33 +132,16 @@ export default async function Home() {
       <main className="mx-auto max-w-3xl space-y-4 p-4 pb-16">
         <PhotoGallery photos={photos} />
         <section className="-mt-2 animate-fade-up" style={{ animationDelay: "120ms" }}>
-          <SearchNumber taken={taken} whatsapp={settings.whatsapp_number} min={min} max={max} alias={settings.alias ?? "—"} />
-        </section>
-
-        <section className="animate-fade-up rounded-3xl border border-brand-100 bg-white p-5 shadow-card dark:border-white/10 dark:bg-night-850 sm:p-6" style={{ animationDelay: "200ms" }}>
-          <div className="flex items-center gap-3">
-            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-brand-600/10 text-brand-700 dark:text-brand-300">
-              <BankIcon className="h-5 w-5" />
-            </span>
-            <div>
-              <h2 className="font-bold leading-tight">Datos para transferir</h2>
-              <p className="text-sm text-slate-500 dark:text-slate-400">Pagás, reservás y confirmás por WhatsApp</p>
-            </div>
-          </div>
-          <dl className="mt-4 divide-y divide-slate-100 dark:divide-white/5">
-            {transferRows.map((r) => (
-              <div key={r.label} className="flex items-center justify-between gap-3 py-2.5">
-                <div className="min-w-0">
-                  <dt className="text-xs font-medium uppercase tracking-wider text-slate-400">{r.label}</dt>
-                  <dd className="tnum truncate font-mono text-sm font-semibold">{r.value}</dd>
-                </div>
-                {r.copy && <CopyButton text={r.value} label={r.label} />}
-              </div>
-            ))}
-          </dl>
-          <p className="mt-2 rounded-xl bg-brand-50 p-3 text-sm text-brand-900 dark:bg-brand-500/10 dark:text-brand-200">
-            Reservá tu número y enviá el comprobante por WhatsApp. Un administrador confirmará tu pago.
-          </p>
+          <SearchNumber
+            taken={taken}
+            whatsapp={settings.whatsapp_number}
+            min={min}
+            max={max}
+            alias={settings.alias ?? "—"}
+            cuit={settings.transfer_cbu ?? "—"}
+            titular={settings.transfer_holder ?? "—"}
+            bank={settings.transfer_bank ?? "—"}
+          />
         </section>
 
         <footer className="pt-2 text-center text-xs text-slate-400 dark:text-slate-500">

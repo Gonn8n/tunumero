@@ -193,8 +193,8 @@ export default function AdminPanel() {
     { key: "number", label: `Número (${rMin}-${rMax})`, numeric: true },
     { key: "nombre", label: "Nombre", numeric: false },
     { key: "apellido", label: "Apellido", numeric: false },
-    { key: "dni", label: "DNI", numeric: false },
-    { key: "telefono", label: "Teléfono", numeric: false }
+    { key: "dni", label: "DNI", numeric: true },
+    { key: "telefono", label: "Teléfono", numeric: true }
   ] as const;
 
   const configFields = [
@@ -521,7 +521,11 @@ export default function AdminPanel() {
                     inputMode={f.numeric ? "numeric" : undefined}
                     onChange={(e) => setManual({
                       ...manual,
-                      [f.key]: f.numeric ? e.target.value.replace(/\D/g, "").slice(0, 4) : e.target.value
+                      [f.key]: f.key === "number"
+                        ? e.target.value.replace(/\D/g, "").slice(0, String(rMax).length || 4)
+                        : f.numeric
+                          ? e.target.value.replace(/\D/g, "")
+                          : e.target.value
                     })}
                     className={`${inputCls} mt-1 ${f.key === "number" ? "font-num text-center text-xl font-bold" : ""}`}
                   />
