@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  isValidNumber, packOptions, formatMoney, formatShort, bestQuote, breakdownText, whatsappBatchLink,
+  isValidNumber, packOptions, formatShort, bestQuote, breakdownText, whatsappBatchLink,
   type Promo
 } from "@/lib/tickets";
 import { createClient } from "@/lib/supabaseClient";
@@ -214,7 +214,7 @@ export default function RaffleClient(props: Props) {
             >
               <TicketIcon className="h-4 w-4 shrink-0" />
               <span className="truncate sm:hidden">{p.open ? "1 N°" : p.name} · {formatShort(p.price)}</span>
-              <span className="hidden truncate sm:inline">{p.name} · {formatMoney(p.price, currency)}</span>
+              <span className="hidden truncate sm:inline">{p.name} · {formatShort(p.price)}</span>
             </button>
           ))}
         </div>
@@ -290,7 +290,7 @@ export default function RaffleClient(props: Props) {
               Elegidos ({selected.length}{pack.open ? "" : `/${pack.quantity}`})
             </p>
             <p className="tnum shrink-0 font-num text-lg font-extrabold leading-none">
-              {formatShort(quote.total)}<span className="text-xs font-bold text-slate-400"> {currency}</span>
+              {formatShort(quote.total)}
             </p>
           </div>
           {quote.parts.length > 0 && (
@@ -312,7 +312,7 @@ export default function RaffleClient(props: Props) {
           </div>
           {quote.nudge && (
             <p role="status" className="mt-2 rounded-xl bg-gold-400/20 p-2 text-xs font-semibold text-amber-800 dark:text-amber-200">
-              Sumá {quote.nudge.need} más por {formatShort(quote.nudge.extra)} extra y ahorrate {formatShort(quote.nudge.saving)}
+              Sumá {quote.nudge.need} x {formatShort(quote.nudge.extra)} y ahorrá {formatShort(quote.nudge.saving)}
             </p>
           )}
           {!pack.open && missing > 0 && (
@@ -324,7 +324,7 @@ export default function RaffleClient(props: Props) {
             <button onClick={openModal} disabled={!canReserve}
               className="flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-brand-600 text-[15px] font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-50">
               <CheckIcon className="h-5 w-5 shrink-0" />
-              Reservar · {formatShort(quote.total)}
+              Reservar
             </button>
             <button onClick={() => setSelected([])} aria-label="Limpiar selección"
               className="h-12 shrink-0 rounded-xl border border-slate-300 px-4 text-sm font-semibold transition hover:bg-slate-50 dark:border-white/10 dark:hover:bg-night-800">
@@ -336,8 +336,8 @@ export default function RaffleClient(props: Props) {
         {selected.length === 0 && (
           <p className="mt-4 rounded-2xl border border-slate-100 p-4 text-center text-sm text-slate-500 dark:border-white/5 dark:text-slate-400">
             {pack.open
-              ? `Tocá los números que quieras (${pack.name} · ${formatMoney(pack.price, currency)} c/u)`
-              : `Tocá múltiplos de ${pack.quantity} (${pack.name} · ${formatMoney(pack.price, currency)})`}
+              ? `Tocá los números que quieras (${pack.name} · ${formatShort(pack.price)} c/u)`
+              : `Tocá múltiplos de ${pack.quantity} (${pack.name} · ${formatShort(pack.price)})`}
           </p>
         )}
       </div>
@@ -357,7 +357,7 @@ export default function RaffleClient(props: Props) {
                 {(done ? batch : selected).join(" · ")}
               </p>
               <p className="mt-1 text-sm font-semibold text-brand-100">
-                Total: {formatMoney(quote.total, currency)}
+                Total: {formatShort(quote.total)}
                 {quote.parts.length > 0 && <span className="font-normal opacity-90"> · {breakdownText(quote.parts)}</span>}
               </p>
             </div>
