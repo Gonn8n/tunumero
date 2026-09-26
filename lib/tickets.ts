@@ -87,6 +87,87 @@ export function formatMoney(value: number, currency: string) {
   return `$${Number(value).toLocaleString("es-AR")} ${currency}`;
 }
 
+/** Precio corto para mobile (sin moneda): $5.000 */
+export function formatShort(value: number) {
+  return `$${Number(value).toLocaleString("es-AR")}`;
+}
+
+export interface QuoteBreak {
+  label: string;
+  times: number;
+}
+
+export interface Nudge {
+  need: number;
+  target: number;
+  extra: number;
+  saving: number;
+}
+
+export interface BestQuote {
+  total: number;
+  saving: number;
+  parts: QuoteBreak[];
+  nudge: Nudge | null;
+}
+
+/**
+ * Mejor combinación (unidad + promos activas, acumulables) + nudge al próximo ahorro.
+ * Ej. U=2000, Promo3=5000: 4 → 7000 (Promo3+1); 6 → 10000 (2×Promo3).
+ */
+export function bestQuote(count: number, unitPrice: number, promos: Promo[]): BestQuote {
+  const U = Number(unitPrice);
+  const empty: BestQuote = { total: 0, saving: 0, parts: [], nudge: null };
+  if (count <= 0 || !(U >= 0)) return empty;
+  const deals = promos
+    .filter((p) => p.active && p.quantity >= 2 && Number(p.price) >= 0)
+    .map((p) => ({ qty: Math.floor(p.quantity), price: Number(p.price), name: p.name }));
+
+  const cost = (n: number): { total: number; parts: QuoteBreak[] } => {
+    const dp: number[] = new Array(n + 1).fill(Infinity);
+    const pick: ({ qty: number; label: string; price: number } | null)[] = new Array(n + 1).fill(null);
+    dp[0] = 0;
+    for (let i = 1; i <= n; i++) {
+      dp[i] = dp[i - 1] + U;
+      pick[i] = { qty: 1, label: "número", price: U };
+      for (const d of deals) {
+        if (d.qty <= i && dp[i - d.qty] + d.price < dp[i]) {
+          dp[i] = dp[i - d.qty] + d.price;
+          pick[i] = { qty: d.qty, label: d.name, price: d.price };
+        }
+      }
+    }
+    const parts: QuoteBreak[] = [];
+    let i = n;
+    while (i > 0 && pick[i]) {
+      const pk = pick[i]!;
+      const found = parts.find((x) => x.label === pk.label);
+      if (found) found.times += 1;
+      else parts.push({ label: pk.label, times: 1 });
+      i -= pk.qty;
+    }
+    return { total: dp[n], parts };
+  };
+
+  const cur = cost(count);
+  const saving = count * U - cur.total;
+  let nudge: Nudge | null = null;
+  for (let m = count + 1; m <= count + 12; m++) {
+    const mc = cost(m);
+    const ms = m * U - mc.total;
+    if (ms > saving) {
+      nudge = { need: m - count, target: m, extra: mc.total - cur.total, saving: ms };
+      break;
+    }
+  }
+  return { total: cur.total, saving, parts: cur.parts, nudge };
+}
+
+/** Texto corto del desglose: "2× Promo 3 + 1 número" */
+export function breakdownText(parts: QuoteBreak[]): string {
+  return parts.map((p) => (p.times > 1 ? `${p.times}× ${p.label}` : p.label)).join(" + ");
+}
+
 /** WhatsApp para reserva múltiple: lista números + total + datos */
 export function whatsappBatchLink(
   adminNumber: string,

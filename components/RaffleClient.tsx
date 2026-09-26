@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import {
-  isValidNumber, packOptions, formatMoney, quoteFor, whatsappBatchLink,
+  isValidNumber, packOptions, formatMoney, formatShort, bestQuote, breakdownText, whatsappBatchLink,
   type Promo
 } from "@/lib/tickets";
 import { createClient } from "@/lib/supabaseClient";
@@ -58,20 +58,28 @@ export default function RaffleClient(props: Props) {
 
   const freeOnPage = pageNumbers.filter((n) => !takenSet.has(n)).length;
 
-  // Cotización: pack fijo o (modo abierto) promo exacta / suma unitaria
-  const quote = pack.open ? quoteFor(selected.length, unitPrice, promos) : { total: pack.price, promo: null };
-  const canReserve = pack.open ? selected.length >= 1 : selected.length === pack.quantity;
-  const reserveLabel = pack.open && quote.promo
-    ? `${quote.promo.name} aplicada`
-    : pack.open
-      ? `${selected.length} número${selected.length === 1 ? "" : "s"}`
-      : pack.quantity === 1 ? "número" : `${pack.quantity} números`;
+  // Cotización: pack fijo por múltiplos o (modo abierto) mejor combinación acumulable
+  const quote = useMemo(() => {
+    if (pack.open) return bestQuote(selected.length, unitPrice, promos);
+    const times = Math.floor(selected.length / pack.quantity);
+    return {
+      total: times * Number(pack.price),
+      saving: selected.length * Number(unitPrice) - times * Number(pack.price),
+      parts: times > 0 ? [{ label: pack.name, times }] : [],
+      nudge: null
+    };
+  }, [pack, selected.length, unitPrice, promos]);
+  const missing = !pack.open && selected.length > 0 ? (pack.quantity - (selected.length % pack.quantity)) % pack.quantity : 0;
+  const canReserve = pack.open ? selected.length >= 1 : selected.length >= pack.quantity && missing === 0;
+  const reserveLabel = pack.open
+    ? `${selected.length} número${selected.length === 1 ? "" : "s"}`
+    : `${selected.length} números (${pack.name} ×${selected.length / pack.quantity})`;
 
   const toggle = (n: number) => {
     if (takenSet.has(n)) return;
     setSelected((prev) => {
       if (prev.includes(n)) return prev.filter((x) => x !== n);
-      if (!pack.open && prev.length >= pack.quantity) return prev;
+      if (prev.length >= 60) return prev;
       return [...prev, n].sort((a, b) => a - b);
     });
   };
@@ -79,7 +87,7 @@ export default function RaffleClient(props: Props) {
   const choosePack = (id: string) => {
     const p = packs.find((x) => x.id === id) ?? packs[0];
     setPackId(p.id);
-    if (!p.open) setSelected((prev) => prev.slice(0, p.quantity));
+    setSelected([]);
   };
 
   const goToNumber = (n: number) => {
@@ -98,8 +106,7 @@ export default function RaffleClient(props: Props) {
     goToNumber(n);
     if (!takenSet.has(n)) {
       setSelected((prev) => {
-        if (prev.includes(n)) return prev;
-        if (!pack.open && prev.length >= pack.quantity) return prev;
+        if (prev.includes(n) || prev.length >= 60) return prev;
         return [...prev, n].sort((a, b) => a - b);
       });
     }
@@ -142,11 +149,10 @@ export default function RaffleClient(props: Props) {
   };
 
   const waNumbers = done ? batch : selected;
-  const waPackName = !pack.open
-    ? (pack.quantity === 1 ? "Número elegido" : pack.name)
-    : quote.promo
-      ? quote.promo.name
-      : waNumbers.length === 1 ? "Número elegido" : "Números elegidos";
+  const waDetail = quote.parts.length > 0 ? breakdownText(quote.parts) : "";
+  const waPackName = (!pack.open
+    ? `${pack.name} ×${Math.max(1, Math.round(waNumbers.length / pack.quantity))}`
+    : waDetail || (waNumbers.length === 1 ? "Número elegido" : "Números elegidos"));
   const wa = whatsappBatchLink(whatsapp, {
     numbers: waNumbers,
     packName: waPackName,
@@ -207,7 +213,8 @@ export default function RaffleClient(props: Props) {
               }`}
             >
               <TicketIcon className="h-4 w-4 shrink-0" />
-              <span className="truncate">{p.name} · {formatMoney(p.price, currency)}</span>
+              <span className="truncate sm:hidden">{p.open ? "1 N°" : p.name} · {formatShort(p.price)}</span>
+              <span className="hidden truncate sm:inline">{p.name} · {formatMoney(p.price, currency)}</span>
             </button>
           ))}
         </div>
@@ -275,37 +282,50 @@ export default function RaffleClient(props: Props) {
           </select>
         </div>
 
-        {/* Barra de selección */}
-        <div className={`mt-4 rounded-2xl border p-4 transition ${selected.length > 0 ? "border-brand-500/40 bg-brand-50 dark:bg-brand-500/10" : "border-slate-100 dark:border-white/5"}`}>
-          {selected.length === 0 ? (
-            <p className="text-center text-sm text-slate-500 dark:text-slate-400">
-              {pack.open
-                ? `Tocá los números que quieras (${pack.name} · ${formatMoney(pack.price, currency)} c/u)`
-                : `Tocá hasta ${pack.quantity} números (${pack.name} · ${formatMoney(pack.price, currency)})`}
+        {/* Barra de selección (sticky: acompaña desde el primer elegido) */}
+        {selected.length > 0 && (
+        <div className="sticky bottom-3 z-30 mt-4 rounded-2xl border border-brand-500/40 bg-brand-50 p-4 shadow-card dark:bg-night-850">
+          <>
+            <p className="text-sm">
+              <b>Elegidos ({selected.length}{pack.open ? "" : `/${pack.quantity}`}):</b>{" "}
+              <span className="tnum font-num font-bold text-brand-700 dark:text-brand-300">{selected.join(" · ")}</span>
             </p>
-          ) : (
-            <>
-              <p className="text-sm">
-                <b>Elegidos ({selected.length}{pack.open ? "" : `/${pack.quantity}`}):</b>{" "}
-                <span className="tnum font-num font-bold text-brand-700 dark:text-brand-300">{selected.join(" · ")}</span>
+            <p className="tnum mt-1 text-sm font-bold">
+              Total: {formatMoney(quote.total, currency)}
+            </p>
+            {quote.parts.length > 0 && (
+              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{breakdownText(quote.parts)}</p>
+            )}
+            {quote.nudge && (
+              <p role="status" className="mt-2 rounded-xl bg-gold-400/20 p-2.5 text-[13px] font-semibold text-amber-800 dark:text-amber-200">
+                Sumá {quote.nudge.need} más por {formatShort(quote.nudge.extra)} extra y ahorrate {formatShort(quote.nudge.saving)}
               </p>
-              <p className="tnum mt-1 text-sm font-bold">
-                Total: {formatMoney(quote.total, currency)}
-                {quote.promo && <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">{quote.promo.name} aplicada</span>}
+            )}
+            {!pack.open && missing > 0 && (
+              <p className="mt-2 text-[13px] font-medium text-slate-500 dark:text-slate-400">
+                Te faltan {missing} para completar {pack.name}
               </p>
-              <div className="mt-3 flex items-center gap-2">
-                <button onClick={() => setSelected([])} className="h-12 rounded-xl border border-slate-300 px-4 text-sm font-semibold transition hover:bg-slate-50 dark:border-white/10 dark:hover:bg-night-800">
-                  Limpiar
-                </button>
-                <button onClick={openModal} disabled={!canReserve}
-                  className="flex h-12 flex-1 items-center justify-center gap-2 rounded-xl bg-brand-600 font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-50">
-                  <CheckIcon className="h-5 w-5" />
-                  Reservar · {formatMoney(quote.total, currency)}
-                </button>
-              </div>
-            </>
-          )}
+            )}
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <button onClick={openModal} disabled={!canReserve}
+                className="flex h-12 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-brand-600 text-[15px] font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-50 sm:flex-1">
+                <CheckIcon className="h-5 w-5 shrink-0" />
+                Reservar · {formatMoney(quote.total, currency)}
+              </button>
+              <button onClick={() => setSelected([])} className="h-11 w-full rounded-xl border border-slate-300 text-sm font-semibold transition hover:bg-slate-50 dark:border-white/10 dark:hover:bg-night-800 sm:w-auto sm:px-4">
+                Limpiar
+              </button>
+            </div>
+          </>
         </div>
+        )}
+        {selected.length === 0 && (
+          <p className="mt-4 rounded-2xl border border-slate-100 p-4 text-center text-sm text-slate-500 dark:border-white/5 dark:text-slate-400">
+            {pack.open
+              ? `Tocá los números que quieras (${pack.name} · ${formatMoney(pack.price, currency)} c/u)`
+              : `Tocá múltiplos de ${pack.quantity} (${pack.name} · ${formatMoney(pack.price, currency)})`}
+          </p>
+        )}
       </div>
 
       {/* Modal reserva */}
@@ -322,7 +342,10 @@ export default function RaffleClient(props: Props) {
               <p className="tnum mt-1 break-words font-num text-3xl font-extrabold tracking-tight sm:text-4xl">
                 {(done ? batch : selected).join(" · ")}
               </p>
-              <p className="mt-1 text-sm font-semibold text-brand-100">Total: {formatMoney(quote.total, currency)}</p>
+              <p className="mt-1 text-sm font-semibold text-brand-100">
+                Total: {formatMoney(quote.total, currency)}
+                {quote.parts.length > 0 && <span className="font-normal opacity-90"> · {breakdownText(quote.parts)}</span>}
+              </p>
             </div>
 
             {!done ? (
