@@ -284,39 +284,53 @@ export default function RaffleClient(props: Props) {
 
         {/* Barra de selección (sticky: acompaña desde el primer elegido) */}
         {selected.length > 0 && (
-        <div className="sticky bottom-3 z-30 mt-4 rounded-2xl border border-brand-500/40 bg-brand-50 p-4 shadow-card dark:bg-night-850">
-          <>
-            <p className="text-sm">
-              <b>Elegidos ({selected.length}{pack.open ? "" : `/${pack.quantity}`}):</b>{" "}
-              <span className="tnum font-num font-bold text-brand-700 dark:text-brand-300">{selected.join(" · ")}</span>
+        <div className="sticky bottom-3 z-30 mt-4 rounded-2xl border border-brand-500/40 bg-brand-50 p-3.5 shadow-card sm:p-4 dark:bg-night-850">
+          <div className="flex items-baseline justify-between gap-2">
+            <p className="text-sm font-semibold">
+              Elegidos ({selected.length}{pack.open ? "" : `/${pack.quantity}`})
             </p>
-            <p className="tnum mt-1 text-sm font-bold">
-              Total: {formatMoney(quote.total, currency)}
+            <p className="tnum shrink-0 font-num text-lg font-extrabold leading-none">
+              {formatShort(quote.total)}<span className="text-xs font-bold text-slate-400"> {currency}</span>
             </p>
-            {quote.parts.length > 0 && (
-              <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">{breakdownText(quote.parts)}</p>
-            )}
-            {quote.nudge && (
-              <p role="status" className="mt-2 rounded-xl bg-gold-400/20 p-2.5 text-[13px] font-semibold text-amber-800 dark:text-amber-200">
-                Sumá {quote.nudge.need} más por {formatShort(quote.nudge.extra)} extra y ahorrate {formatShort(quote.nudge.saving)}
-              </p>
-            )}
-            {!pack.open && missing > 0 && (
-              <p className="mt-2 text-[13px] font-medium text-slate-500 dark:text-slate-400">
-                Te faltan {missing} para completar {pack.name}
-              </p>
-            )}
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-              <button onClick={openModal} disabled={!canReserve}
-                className="flex h-12 w-full items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-brand-600 text-[15px] font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-50 sm:flex-1">
-                <CheckIcon className="h-5 w-5 shrink-0" />
-                Reservar · {formatMoney(quote.total, currency)}
+          </div>
+          {quote.parts.length > 0 && (
+            <p className="tnum mt-0.5 truncate text-right text-[11px] text-slate-500 dark:text-slate-400">{breakdownText(quote.parts)}</p>
+          )}
+          <div className="mt-2 flex gap-1.5 overflow-x-auto pb-0.5" role="group" aria-label="Números elegidos, tocá uno para quitarlo">
+            {selected.map((n) => (
+              <button
+                key={n}
+                onClick={() => toggle(n)}
+                title={`Quitar ${n}`}
+                aria-label={`Quitar ${n} de la selección`}
+                className="tnum flex h-9 shrink-0 items-center gap-1 rounded-full bg-brand-600/10 px-3 font-num text-sm font-bold text-brand-700 transition hover:bg-brand-600/20 active:scale-95 dark:text-brand-300"
+              >
+                {n}
+                <span aria-hidden="true" className="text-xs opacity-60">✕</span>
               </button>
-              <button onClick={() => setSelected([])} className="h-11 w-full rounded-xl border border-slate-300 text-sm font-semibold transition hover:bg-slate-50 dark:border-white/10 dark:hover:bg-night-800 sm:w-auto sm:px-4">
-                Limpiar
-              </button>
-            </div>
-          </>
+            ))}
+          </div>
+          {quote.nudge && (
+            <p role="status" className="mt-2 rounded-xl bg-gold-400/20 p-2 text-xs font-semibold text-amber-800 dark:text-amber-200">
+              Sumá {quote.nudge.need} más por {formatShort(quote.nudge.extra)} extra y ahorrate {formatShort(quote.nudge.saving)}
+            </p>
+          )}
+          {!pack.open && missing > 0 && (
+            <p className="mt-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+              Te faltan {missing} para completar {pack.name}
+            </p>
+          )}
+          <div className="mt-2.5 flex items-center gap-2">
+            <button onClick={openModal} disabled={!canReserve}
+              className="flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-brand-600 text-[15px] font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-50">
+              <CheckIcon className="h-5 w-5 shrink-0" />
+              Reservar · {formatShort(quote.total)}
+            </button>
+            <button onClick={() => setSelected([])} aria-label="Limpiar selección"
+              className="h-12 shrink-0 rounded-xl border border-slate-300 px-4 text-sm font-semibold transition hover:bg-slate-50 dark:border-white/10 dark:hover:bg-night-800">
+              Limpiar
+            </button>
+          </div>
         </div>
         )}
         {selected.length === 0 && (
