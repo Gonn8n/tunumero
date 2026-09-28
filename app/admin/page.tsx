@@ -521,15 +521,21 @@ export default function AdminPanel() {
                           </button>
                         )}
                         {g.tickets.length > 1 && (
-                        <div className="flex flex-wrap justify-end gap-1">
+                        <div className="flex flex-wrap justify-end gap-1.5">
                           {g.tickets.map((t) => (
-                            <span key={t.id} className="tnum inline-flex items-center gap-1 rounded-lg border border-slate-200 py-1 pl-1.5 pr-1 text-xs font-bold dark:border-white/10">
+                            <span key={t.id} className="tnum inline-flex items-center gap-1 rounded-xl border border-slate-200 py-1 pl-2.5 pr-1 text-xs font-bold dark:border-white/10">
                               {t.number}
                               {(tab === "pendiente") && (
-                                <button onClick={() => act(t.id, "confirm")} className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[11px] font-bold text-white transition hover:bg-emerald-700">Confirmar</button>
+                                <button onClick={() => act(t.id, "confirm")} aria-label={`Confirmar ${t.number}`} title={`Confirmar ${t.number}`}
+                                  className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white transition hover:bg-emerald-700 active:scale-95">
+                                  <CheckIcon className="h-4 w-4" />
+                                </button>
                               )}
                               {(tab === "pendiente" || tab === "confirmado") && (
-                                <button onClick={() => act(t.id, "cancel")} className="rounded-md border border-rose-200 px-1.5 py-0.5 text-[11px] font-bold text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300">Cancelar</button>
+                                <button onClick={() => act(t.id, "cancel")} aria-label={`Cancelar ${t.number}`} title={`Cancelar ${t.number}`}
+                                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition hover:bg-rose-50 active:scale-95 dark:border-rose-500/30 dark:text-rose-300">
+                                  <XIcon className="h-4 w-4" />
+                                </button>
                               )}
                             </span>
                           ))}
@@ -603,10 +609,10 @@ export default function AdminPanel() {
                     <span key={t.id} className="tnum inline-flex items-center gap-1.5 rounded-xl border border-slate-200 py-1 pl-2 pr-1 text-xs font-bold dark:border-white/10">
                       {t.number}
                       {(tab === "pendiente") && (
-                        <button onClick={() => act(t.id, "confirm")} className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white">Confirmar</button>
+                        <button onClick={() => act(t.id, "confirm")} aria-label={`Confirmar ${t.number}`} title={`Confirmar ${t.number}`} className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white transition active:scale-95"><CheckIcon className="h-4 w-4" /></button>
                       )}
                       {(tab === "pendiente" || tab === "confirmado") && (
-                        <button onClick={() => act(t.id, "cancel")} className="rounded-lg border border-rose-200 px-2 py-1 text-[11px] font-bold text-rose-600 dark:border-rose-500/30 dark:text-rose-300">Cancelar</button>
+                        <button onClick={() => act(t.id, "cancel")} aria-label={`Cancelar ${t.number}`} title={`Cancelar ${t.number}`} className="flex h-9 w-9 items-center justify-center rounded-lg border border-rose-200 text-rose-600 transition active:scale-95 dark:border-rose-500/30 dark:text-rose-300"><XIcon className="h-4 w-4" /></button>
                       )}
                     </span>
                   ))}
