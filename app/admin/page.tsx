@@ -7,7 +7,7 @@ import PromoManager from "@/components/PromoManager";
 import DownloadExcel from "@/components/DownloadExcel";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, type Ticket, type Promo } from "@/lib/tickets";
+import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, groupOrders, bestQuote, breakdownText, formatShort, type Ticket, type Promo, type OrderGroup } from "@/lib/tickets";
 import {
   CheckIcon, ChatIcon, ClockIcon, CogIcon, LogoutIcon, PlusIcon,
   ShieldIcon, TicketIcon, UsersIcon, XIcon
@@ -117,6 +117,30 @@ export default function AdminPanel() {
     load();
   };
 
+  const patchOne = async (id: string, action: "confirm" | "cancel", reason: string) => {
+    const res = await fetch("/api/tickets", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action, cancel_reason: reason })
+    });
+    return res.ok;
+  };
+
+  /** Confirma/cancela todo el pedido número por número (auditoría intacta por ticket) */
+  const actGroup = async (g: OrderGroup, action: "confirm" | "cancel") => {
+    const reason = action === "cancel" ? prompt(`Motivo de cancelación del pedido (${g.numbers.join(", ")})`) ?? "" : "";
+    const results = await Promise.all(g.tickets.map((t) => patchOne(t.id, action, reason)));
+    const failed = results.filter((ok) => !ok).length;
+    if (failed === 0) {
+      say(action === "confirm"
+        ? `Pedido confirmado (${g.numbers.length} números) a tu nombre.`
+        : `Pedido cancelado, ${g.numbers.length} números liberados.`);
+    } else {
+      say(`Atención: ${failed} de ${g.tickets.length} fallaron. Revisá el tab.`, false);
+    }
+    load();
+  };
+
   const reserveManual = async () => {
     const n = parseInt(manual.number, 10);
     if (!Number.isInteger(n) || n < rMin || n > rMax) { say(`Número inválido (${rMin}-${rMax}).`, false); return; }
@@ -195,6 +219,11 @@ export default function AdminPanel() {
   const rows = tickets.filter((t) =>
     tab === "reservar" || tab === "config" || tab === "historial" ? false : t.status === tab
   );
+
+  // Pedidos agrupados (1 card por compra) + monto con la misma regla del cliente
+  const unitPrice = Number(settings.ticket_price ?? 2000);
+  const groups = groupOrders(rows);
+  const groupQuote = (g: OrderGroup) => bestQuote(g.numbers.length, unitPrice, promos);
 
   const histRows = history.filter((h) =>
     histFilter === "" || String(h.number).includes(histFilter.replace(/\D/g, ""))
@@ -428,58 +457,87 @@ export default function AdminPanel() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs uppercase tracking-wider text-slate-400 dark:border-white/5">
-                  <th className="p-3">N°</th>
+                  <th className="p-3">Números</th>
                   <th className="p-3">Cliente</th>
                   <th className="p-3">DNI / Tel</th>
+                  <th className="p-3 text-right">Total</th>
                   <th className="p-3 text-right">Acción</th>
                 </tr>
               </thead>
               <tbody>
-                {rows.map((t) => (
-                  <tr key={t.id} className="border-b border-slate-50 transition last:border-0 hover:bg-brand-50/50 dark:border-white/5 dark:hover:bg-night-800">
-                    <td className="tnum p-3 font-num text-base font-extrabold text-brand-700 dark:text-brand-300">{t.number}</td>
+                {groups.map((g) => {
+                  const q = groupQuote(g);
+                  const first = g.tickets[0];
+                  const confName = g.tickets.map((t) => t.confirmed_by && adminNames[t.confirmed_by]).find(Boolean);
+                  return (
+                  <tr key={g.key} className="border-b border-slate-50 transition last:border-0 hover:bg-brand-50/50 dark:border-white/5 dark:hover:bg-night-800">
                     <td className="p-3">
-                      <p className="font-medium">{t.nombre} {t.apellido}</p>
-                      {t.status === "confirmado" && t.confirmed_by && adminNames[t.confirmed_by] && (
-                        <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">
-                          Conf. por {adminNames[t.confirmed_by]}
-                        </p>
+                      <div className="flex max-w-[220px] flex-wrap gap-1">
+                        {g.numbers.map((n) => (
+                          <span key={n} className="tnum rounded-lg bg-brand-50 px-2 py-0.5 font-num text-sm font-extrabold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">{n}</span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <p className="font-medium">{g.nombre} {g.apellido}</p>
+                      {tab === "confirmado" && confName && (
+                        <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">Conf. por {confName}</p>
                       )}
                     </td>
-                    <td className="tnum p-3 text-slate-500 dark:text-slate-400">
-                      {t.dni} /{" "}
+                    <td className="tnum whitespace-nowrap p-3 text-slate-500 dark:text-slate-400">
+                      {g.dni} /{" "}
                       <a
-                        href={adminWhatsappLink(t)}
+                        href={adminWhatsappLink({ number: g.numbers[0], nombre: g.nombre, apellido: g.apellido, telefono: first.telefono, status: first.status })}
                         target="_blank"
                         rel="noreferrer"
-                        title={`Escribir a ${t.nombre} por WhatsApp`}
-                        aria-label={`Escribir a ${t.nombre} ${t.apellido} por WhatsApp`}
+                        title={`Escribir a ${g.nombre} por WhatsApp`}
+                        aria-label={`Escribir a ${g.nombre} ${g.apellido} por WhatsApp`}
                         className="inline-flex items-center gap-1 font-semibold text-[#1faa55] underline-offset-2 hover:underline"
                       >
                         <ChatIcon className="h-4 w-4" />
-                        {t.telefono}
+                        {g.telefono}
                       </a>
                     </td>
+                    <td className="tnum whitespace-nowrap p-3 text-right font-num font-extrabold">
+                      {formatShort(q.total)}
+                      {q.parts.length > 0 && (
+                        <span className="block text-[11px] font-medium text-slate-400">{breakdownText(q.parts)}</span>
+                      )}
+                    </td>
                     <td className="p-3">
-                      <div className="flex justify-end gap-2">
-                        {(tab === "pendiente" || tab === "reservado") && (
-                          <button onClick={() => act(t.id, "confirm")} className="flex h-10 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 font-semibold text-white transition hover:bg-emerald-700 active:scale-95">
+                      <div className="flex flex-col items-end gap-1.5">
+                        {(tab === "pendiente" || tab === "reservado") && g.tickets.length > 1 && (
+                          <button onClick={() => actGroup(g, "confirm")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl bg-emerald-600 px-3 font-semibold text-white transition hover:bg-emerald-700 active:scale-95">
                             <CheckIcon className="h-4 w-4" />
-                            Confirmar
+                            Confirmar todo
                           </button>
                         )}
-                        {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
-                          <button onClick={() => act(t.id, "cancel")} className="flex h-10 items-center gap-1.5 rounded-xl border border-rose-200 px-3 font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-95 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10">
+                        {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && g.tickets.length > 1 && (
+                          <button onClick={() => actGroup(g, "cancel")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-rose-200 px-3 font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-95 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10">
                             <XIcon className="h-4 w-4" />
-                            Cancelar
+                            Cancelar todo
                           </button>
                         )}
+                        <div className="flex flex-wrap justify-end gap-1">
+                          {g.tickets.map((t) => (
+                            <span key={t.id} className="tnum inline-flex items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs font-bold dark:border-white/10">
+                              {t.number}
+                              {(tab === "pendiente" || tab === "reservado") && (
+                                <button onClick={() => act(t.id, "confirm")} aria-label={`Confirmar ${t.number}`} className="text-emerald-600 hover:scale-110"><CheckIcon className="h-3.5 w-3.5" /></button>
+                              )}
+                              {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
+                                <button onClick={() => act(t.id, "cancel")} aria-label={`Cancelar ${t.number}`} className="text-rose-500 hover:scale-110"><XIcon className="h-3.5 w-3.5" /></button>
+                              )}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </td>
                   </tr>
-                ))}
-                {rows.length === 0 && (
-                  <tr><td className="p-6 text-center text-slate-400" colSpan={4}>Sin registros en esta sección.</td></tr>
+                  );
+                })}
+                {groups.length === 0 && (
+                  <tr><td className="p-6 text-center text-slate-400" colSpan={5}>Sin registros en esta sección.</td></tr>
                 )}
               </tbody>
             </table>
@@ -488,46 +546,70 @@ export default function AdminPanel() {
 
         {(tab !== "reservar" && tab !== "config" && tab !== "historial") && (
           <div className="space-y-2 sm:hidden">
-            {rows.map((t) => (
-              <article key={t.id} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-card dark:border-white/10 dark:bg-night-850">
+            {groups.map((g) => {
+              const q = groupQuote(g);
+              const first = g.tickets[0];
+              const confName = g.tickets.map((t) => t.confirmed_by && adminNames[t.confirmed_by]).find(Boolean);
+              return (
+              <article key={g.key} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-card dark:border-white/10 dark:bg-night-850">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="tnum font-num text-2xl font-extrabold leading-none text-brand-700 dark:text-brand-300">{t.number}</p>
-                    <p className="mt-1.5 truncate font-semibold">{t.nombre} {t.apellido}</p>
-                    {t.status === "confirmado" && t.confirmed_by && adminNames[t.confirmed_by] && (
-                      <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">
-                        Conf. por {adminNames[t.confirmed_by]}
-                      </p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap gap-1">
+                      {g.numbers.map((n) => (
+                        <span key={n} className="tnum rounded-lg bg-brand-50 px-2 py-0.5 font-num text-base font-extrabold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">{n}</span>
+                      ))}
+                    </div>
+                    <p className="mt-1.5 truncate font-semibold">{g.nombre} {g.apellido}</p>
+                    {tab === "confirmado" && confName && (
+                      <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">Conf. por {confName}</p>
                     )}
+                    <p className="tnum mt-1 text-sm font-extrabold">
+                      Total: {formatShort(q.total)}
+                      {q.parts.length > 0 && <span className="ml-1 text-[11px] font-medium text-slate-400">{breakdownText(q.parts)}</span>}
+                    </p>
                   </div>
                   <a
-                    href={adminWhatsappLink(t)}
+                    href={adminWhatsappLink({ number: g.numbers[0], nombre: g.nombre, apellido: g.apellido, telefono: first.telefono, status: first.status })}
                     target="_blank"
                     rel="noreferrer"
-                    aria-label={`Escribir a ${t.nombre} ${t.apellido} por WhatsApp`}
+                    aria-label={`Escribir a ${g.nombre} ${g.apellido} por WhatsApp`}
                     className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#1faa55]/10 text-[#1faa55]"
                   >
                     <ChatIcon className="h-5 w-5" />
                   </a>
                 </div>
-                <p className="tnum mt-2 text-sm text-slate-500 dark:text-slate-400">DNI {t.dni} · {t.telefono}</p>
-                <div className="mt-3 flex gap-2">
-                  {(tab === "pendiente" || tab === "reservado") && (
-                    <button onClick={() => act(t.id, "confirm")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 font-semibold text-white transition hover:bg-emerald-700 active:scale-[.98]">
-                      <CheckIcon className="h-4 w-4" />
-                      Confirmar
-                    </button>
-                  )}
-                  {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
-                    <button onClick={() => act(t.id, "cancel")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-200 font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-[.98] dark:border-rose-500/30 dark:text-rose-300">
+                <p className="tnum mt-2 text-sm text-slate-500 dark:text-slate-400">DNI {g.dni} · {g.telefono}</p>
+                {g.tickets.length > 1 && (tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
+                  <div className="mt-3 flex gap-2">
+                    {(tab === "pendiente" || tab === "reservado") && (
+                      <button onClick={() => actGroup(g, "confirm")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-sm font-semibold text-white transition hover:bg-emerald-700 active:scale-[.98]">
+                        <CheckIcon className="h-4 w-4" />
+                        Confirmar todo
+                      </button>
+                    )}
+                    <button onClick={() => actGroup(g, "cancel")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-200 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-[.98] dark:border-rose-500/30 dark:text-rose-300">
                       <XIcon className="h-4 w-4" />
-                      Cancelar
+                      Cancelar todo
                     </button>
-                  )}
+                  </div>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {g.tickets.map((t) => (
+                    <span key={t.id} className="tnum inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold dark:border-white/10">
+                      {t.number}
+                      {(tab === "pendiente" || tab === "reservado") && (
+                        <button onClick={() => act(t.id, "confirm")} aria-label={`Confirmar ${t.number}`} className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600 text-white"><CheckIcon className="h-3.5 w-3.5" /></button>
+                      )}
+                      {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
+                        <button onClick={() => act(t.id, "cancel")} aria-label={`Cancelar ${t.number}`} className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 text-rose-600 dark:border-rose-500/30 dark:text-rose-300"><XIcon className="h-3.5 w-3.5" /></button>
+                      )}
+                    </span>
+                  ))}
                 </div>
               </article>
-            ))}
-            {rows.length === 0 && (
+              );
+            })}
+            {groups.length === 0 && (
               <p className="rounded-2xl border border-brand-100 bg-white p-6 text-center text-slate-400 dark:border-white/10 dark:bg-night-850">
                 Sin registros en esta sección.
               </p>

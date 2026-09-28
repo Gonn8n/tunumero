@@ -23,7 +23,57 @@ export interface Ticket {
   status: TicketStatus;
   source: string;
   confirmed_by?: string | null;
+  batch_id?: string | null;
   created_at?: string;
+}
+
+/** Pedido agrupado: 1 card por compra (varios números, un monto) */
+export interface OrderGroup {
+  key: string;
+  numbers: number[];
+  tickets: Ticket[];
+  nombre: string;
+  apellido: string;
+  dni: string;
+  telefono: string;
+  latest: string;
+}
+
+/** Agrupa filas por batch_id (legacy sin batch = grupo individual), ordenado por fecha desc */
+export function groupOrders(rows: Ticket[]): OrderGroup[] {
+  const buckets: { key: string; items: Ticket[] }[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const t = rows[i];
+    const key = t.batch_id ?? `solo-${t.id}`;
+    let b: { key: string; items: Ticket[] } | null = null;
+    for (let j = 0; j < buckets.length; j++) {
+      if (buckets[j].key === key) { b = buckets[j]; break; }
+    }
+    if (b) b.items.push(t);
+    else buckets.push({ key, items: [t] });
+  }
+  const groups: OrderGroup[] = [];
+  for (let i = 0; i < buckets.length; i++) {
+    const ts = buckets[i].items.slice().sort((a, b) => a.number - b.number);
+    const first = ts[0];
+    let latest = "";
+    for (let j = 0; j < ts.length; j++) {
+      const c = ts[j].created_at ?? "";
+      if (c > latest) latest = c;
+    }
+    groups.push({
+      key: buckets[i].key,
+      numbers: ts.map((x) => x.number),
+      tickets: ts,
+      nombre: first.nombre,
+      apellido: first.apellido,
+      dni: first.dni,
+      telefono: first.telefono,
+      latest
+    });
+  }
+  groups.sort((a, b) => (b.latest > a.latest ? 1 : b.latest < a.latest ? -1 : 0));
+  return groups;
 }
 
 export interface RaffleSettings {
