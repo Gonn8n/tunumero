@@ -300,11 +300,11 @@ export default function AdminPanel() {
 
         <section className="relative mx-auto max-w-5xl px-4">
           <div className="grid grid-cols-6 gap-2 lg:grid-cols-4">
-          {stats.map((s, i) => (
-            <div key={s.label} className={`${i < 2 ? "col-span-3" : "col-span-2"} overflow-hidden rounded-2xl bg-white text-slate-900 shadow-card lg:col-span-1 dark:bg-night-850 dark:text-white`}>
+          {stats.map((s) => (
+            <div key={s.label} className="col-span-3 overflow-hidden rounded-2xl bg-white text-slate-900 shadow-card lg:col-span-1 dark:bg-night-850 dark:text-white">
               <div className={`h-1 ${s.bar}`} />
               <div className="flex items-center gap-2 p-3">
-                <span className={`${s.ring} ${i < 2 ? "" : "hidden min-[420px]:flex sm:flex"}`}>
+                <span className={`${s.ring} shrink-0`}>
                   <s.icon className="h-5 w-5 shrink-0" />
                 </span>
                 <div className="min-w-0">
@@ -335,16 +335,11 @@ export default function AdminPanel() {
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-[52px] items-center justify-between rounded-xl border px-3 text-[13px] font-semibold transition lg:h-10 lg:justify-center lg:gap-1.5 lg:px-3.5 lg:text-sm ${
+              className={`flex h-[52px] items-center justify-center rounded-xl border px-2 text-[13px] font-semibold transition lg:h-10 lg:px-3.5 lg:text-sm ${
                 tab === t.id ? "border-transparent bg-brand-600 text-white shadow-glow" : "border-slate-200 text-slate-500 hover:border-brand-300 hover:bg-slate-50 dark:border-white/10 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
               {t.label}
-              {t.count !== undefined && (
-                <span className={`tnum rounded-full px-2 py-0.5 text-xs lg:px-1.5 ${tab === t.id ? "bg-white/20" : "bg-slate-100 dark:bg-night-700"}`}>
-                  {t.count}
-                </span>
-              )}
             </button>
           ))}
           </div>
