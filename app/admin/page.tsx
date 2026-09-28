@@ -13,7 +13,7 @@ import {
   ShieldIcon, TicketIcon, UsersIcon, XIcon
 } from "@/components/icons";
 
-type Tab = "pendiente" | "reservado" | "confirmado" | "cancelado" | "historial" | "reservar" | "config";
+type Tab = "pendiente" | "confirmado" | "cancelado" | "historial" | "reservar" | "config";
 
 interface HistoryEntry {
   id: number;
@@ -92,7 +92,9 @@ export default function AdminPanel() {
 
   useEffect(() => { load(); }, []);
 
-  const count = (st: string) => tickets.filter((t) => t.status === st).length;
+  const count = (st: string) => tickets.filter((t) =>
+    st === "pendiente" ? (t.status === "pendiente" || t.status === "reservado") : t.status === st
+  ).length;
   const rMin = Number(settings.min_number ?? 0);
   const rMax = Number(settings.max_number ?? 4999);
   const total = totalNumbers(rMin, rMax);
@@ -153,7 +155,7 @@ export default function AdminPanel() {
     const { error } = await supabase.from("tickets").insert({
       number: n, nombre: manual.nombre.trim(), apellido: manual.apellido.trim(),
       dni: manual.dni.trim(), telefono: manual.telefono.trim(),
-      status: "reservado", source: "admin", created_by: user?.id ?? null
+      status: "pendiente", source: "admin", created_by: user?.id ?? null
     });
     say(error ? "Ese número ya está ocupado." : `Número ${n} reservado.`, !error);
     if (!error) { setManual({ number: "", nombre: "", apellido: "", dni: "", telefono: "" }); load(); }
@@ -216,9 +218,11 @@ export default function AdminPanel() {
     router.push("/admin/login");
   };
 
-  const rows = tickets.filter((t) =>
-    tab === "reservar" || tab === "config" || tab === "historial" ? false : t.status === tab
-  );
+  const rows = tickets.filter((t) => {
+    if (tab === "reservar" || tab === "config" || tab === "historial") return false;
+    if (tab === "pendiente") return t.status === "pendiente" || t.status === "reservado";
+    return t.status === tab;
+  });
 
   // Pedidos agrupados (1 card por compra) + monto con la misma regla del cliente
   const unitPrice = Number(settings.ticket_price ?? 2000);
@@ -232,14 +236,12 @@ export default function AdminPanel() {
   const stats = [
     { label: "Disponibles", value: disponibles, icon: TicketIcon, ring: "text-brand-600 dark:text-brand-300", bar: "bg-brand-500" },
     { label: "Pendientes", value: count("pendiente"), icon: ClockIcon, ring: "text-amber-500", bar: "bg-amber-400" },
-    { label: "Reservados", value: count("reservado"), icon: UsersIcon, ring: "text-sky-500", bar: "bg-sky-400" },
     { label: "Confirmados", value: count("confirmado"), icon: CheckIcon, ring: "text-emerald-500", bar: "bg-emerald-500" },
     { label: "Cancelados", value: count("cancelado"), icon: XIcon, ring: "text-slate-400", bar: "bg-slate-400" }
   ];
 
   const tabs: { id: Tab; label: string; count?: number }[] = [
     { id: "pendiente", label: "Pendientes", count: count("pendiente") },
-    { id: "reservado", label: "Reservados", count: count("reservado") },
     { id: "confirmado", label: "Confirmados", count: count("confirmado") },
     { id: "cancelado", label: "Cancelados", count: count("cancelado") },
     { id: "historial", label: "Historial" },
@@ -297,7 +299,7 @@ export default function AdminPanel() {
         </header>
 
         <section className="relative mx-auto max-w-5xl px-4">
-          <div className="grid grid-cols-6 gap-2 lg:grid-cols-5">
+          <div className="grid grid-cols-6 gap-2 lg:grid-cols-4">
           {stats.map((s, i) => (
             <div key={s.label} className={`${i < 2 ? "col-span-3" : "col-span-2"} overflow-hidden rounded-2xl bg-white text-slate-900 shadow-card lg:col-span-1 dark:bg-night-850 dark:text-white`}>
               <div className={`h-1 ${s.bar}`} />
@@ -327,13 +329,13 @@ export default function AdminPanel() {
         )}
 
         <nav aria-label="Secciones del panel" className="rounded-2xl border border-brand-100 bg-white p-1.5 lg:flex lg:items-center lg:gap-1 dark:border-white/10 dark:bg-night-850">
-          <div className="grid grid-cols-2 gap-1.5 lg:contents">
-          {tabs.filter((t) => ["pendiente", "reservado", "confirmado", "cancelado"].includes(t.id)).map((t) => (
+          <div className="grid grid-cols-3 gap-1.5 lg:contents">
+          {tabs.filter((t) => ["pendiente", "confirmado", "cancelado"].includes(t.id)).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-[52px] items-center justify-between rounded-xl border px-4 text-sm font-semibold transition lg:h-10 lg:justify-center lg:gap-1.5 lg:px-3.5 ${
+              className={`flex h-[52px] items-center justify-between rounded-xl border px-3 text-[13px] font-semibold transition lg:h-10 lg:justify-center lg:gap-1.5 lg:px-3.5 lg:text-sm ${
                 tab === t.id ? "border-transparent bg-brand-600 text-white shadow-glow" : "border-slate-200 text-slate-500 hover:border-brand-300 hover:bg-slate-50 dark:border-white/10 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
@@ -446,7 +448,7 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {(tab === "pendiente" || tab === "reservado" || tab === "confirmado" || tab === "cancelado") && (
+        {(tab === "pendiente" || tab === "confirmado" || tab === "cancelado") && (
           <div className="sm:flex sm:justify-end">
             <DownloadExcel tickets={rows} tab={tab} adminNames={adminNames} />
           </div>
@@ -506,31 +508,33 @@ export default function AdminPanel() {
                     </td>
                     <td className="p-3">
                       <div className="flex flex-col items-end gap-1.5">
-                        {(tab === "pendiente" || tab === "reservado") && g.tickets.length > 1 && (
-                          <button onClick={() => actGroup(g, "confirm")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl bg-emerald-600 px-3 font-semibold text-white transition hover:bg-emerald-700 active:scale-95">
+                        {(tab === "pendiente") && (
+                          <button onClick={() => g.tickets.length > 1 ? actGroup(g, "confirm") : act(g.tickets[0].id, "confirm")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl bg-emerald-600 px-3 text-sm font-semibold text-white transition hover:bg-emerald-700 active:scale-95">
                             <CheckIcon className="h-4 w-4" />
-                            Confirmar todo
+                            {g.tickets.length > 1 ? "Confirmar todo" : "Confirmar"}
                           </button>
                         )}
-                        {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && g.tickets.length > 1 && (
-                          <button onClick={() => actGroup(g, "cancel")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-rose-200 px-3 font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-95 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10">
+                        {(tab === "pendiente" || tab === "confirmado") && (
+                          <button onClick={() => g.tickets.length > 1 ? actGroup(g, "cancel") : act(g.tickets[0].id, "cancel")} className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-rose-200 px-3 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-95 dark:border-rose-500/30 dark:text-rose-300 dark:hover:bg-rose-500/10">
                             <XIcon className="h-4 w-4" />
-                            Cancelar todo
+                            {g.tickets.length > 1 ? "Cancelar todo" : "Cancelar"}
                           </button>
                         )}
+                        {g.tickets.length > 1 && (
                         <div className="flex flex-wrap justify-end gap-1">
                           {g.tickets.map((t) => (
-                            <span key={t.id} className="tnum inline-flex items-center gap-1 rounded-lg border border-slate-200 px-1.5 py-1 text-xs font-bold dark:border-white/10">
+                            <span key={t.id} className="tnum inline-flex items-center gap-1 rounded-lg border border-slate-200 py-1 pl-1.5 pr-1 text-xs font-bold dark:border-white/10">
                               {t.number}
-                              {(tab === "pendiente" || tab === "reservado") && (
-                                <button onClick={() => act(t.id, "confirm")} aria-label={`Confirmar ${t.number}`} className="text-emerald-600 hover:scale-110"><CheckIcon className="h-3.5 w-3.5" /></button>
+                              {(tab === "pendiente") && (
+                                <button onClick={() => act(t.id, "confirm")} className="rounded-md bg-emerald-600 px-1.5 py-0.5 text-[11px] font-bold text-white transition hover:bg-emerald-700">Confirmar</button>
                               )}
-                              {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
-                                <button onClick={() => act(t.id, "cancel")} aria-label={`Cancelar ${t.number}`} className="text-rose-500 hover:scale-110"><XIcon className="h-3.5 w-3.5" /></button>
+                              {(tab === "pendiente" || tab === "confirmado") && (
+                                <button onClick={() => act(t.id, "cancel")} className="rounded-md border border-rose-200 px-1.5 py-0.5 text-[11px] font-bold text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-300">Cancelar</button>
                               )}
                             </span>
                           ))}
                         </div>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -579,33 +583,35 @@ export default function AdminPanel() {
                   </a>
                 </div>
                 <p className="tnum mt-2 text-sm text-slate-500 dark:text-slate-400">DNI {g.dni} · {g.telefono}</p>
-                {g.tickets.length > 1 && (tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
+                {(tab === "pendiente" || tab === "confirmado") && (
                   <div className="mt-3 flex gap-2">
-                    {(tab === "pendiente" || tab === "reservado") && (
-                      <button onClick={() => actGroup(g, "confirm")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-sm font-semibold text-white transition hover:bg-emerald-700 active:scale-[.98]">
+                    {(tab === "pendiente") && (
+                      <button onClick={() => g.tickets.length > 1 ? actGroup(g, "confirm") : act(g.tickets[0].id, "confirm")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 text-sm font-semibold text-white transition hover:bg-emerald-700 active:scale-[.98]">
                         <CheckIcon className="h-4 w-4" />
-                        Confirmar todo
+                        {g.tickets.length > 1 ? "Confirmar todo" : "Confirmar"}
                       </button>
                     )}
-                    <button onClick={() => actGroup(g, "cancel")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-200 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-[.98] dark:border-rose-500/30 dark:text-rose-300">
+                    <button onClick={() => g.tickets.length > 1 ? actGroup(g, "cancel") : act(g.tickets[0].id, "cancel")} className="flex h-12 flex-1 items-center justify-center gap-1.5 rounded-xl border border-rose-200 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 active:scale-[.98] dark:border-rose-500/30 dark:text-rose-300">
                       <XIcon className="h-4 w-4" />
-                      Cancelar todo
+                      {g.tickets.length > 1 ? "Cancelar todo" : "Cancelar"}
                     </button>
                   </div>
                 )}
+                {g.tickets.length > 1 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   {g.tickets.map((t) => (
-                    <span key={t.id} className="tnum inline-flex items-center gap-1.5 rounded-xl border border-slate-200 px-2 py-1 text-xs font-bold dark:border-white/10">
+                    <span key={t.id} className="tnum inline-flex items-center gap-1.5 rounded-xl border border-slate-200 py-1 pl-2 pr-1 text-xs font-bold dark:border-white/10">
                       {t.number}
-                      {(tab === "pendiente" || tab === "reservado") && (
-                        <button onClick={() => act(t.id, "confirm")} aria-label={`Confirmar ${t.number}`} className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-600 text-white"><CheckIcon className="h-3.5 w-3.5" /></button>
+                      {(tab === "pendiente") && (
+                        <button onClick={() => act(t.id, "confirm")} className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white">Confirmar</button>
                       )}
-                      {(tab === "pendiente" || tab === "reservado" || tab === "confirmado") && (
-                        <button onClick={() => act(t.id, "cancel")} aria-label={`Cancelar ${t.number}`} className="flex h-7 w-7 items-center justify-center rounded-lg border border-rose-200 text-rose-600 dark:border-rose-500/30 dark:text-rose-300"><XIcon className="h-3.5 w-3.5" /></button>
+                      {(tab === "pendiente" || tab === "confirmado") && (
+                        <button onClick={() => act(t.id, "cancel")} className="rounded-lg border border-rose-200 px-2 py-1 text-[11px] font-bold text-rose-600 dark:border-rose-500/30 dark:text-rose-300">Cancelar</button>
                       )}
                     </span>
                   ))}
                 </div>
+                )}
               </article>
               );
             })}
