@@ -25,6 +25,10 @@ export interface Ticket {
   confirmed_by?: string | null;
   batch_id?: string | null;
   created_at?: string;
+  prize_label?: string | null;
+  prize_kind?: string | null;
+  prize_value?: number | null;
+  is_bonus?: boolean;
 }
 
 /** Pedido agrupado: 1 card por compra (varios números, un monto) */
@@ -274,8 +278,7 @@ export function whatsappLink(
   return `https://wa.me/${clean}?text=${msg}`;
 }
 
-/** Link para que el admin contacte al cliente por WhatsApp, con mensaje según estado */
-export function adminWhatsappLink(t: {
+/** Link para que el admin contacte al cliente por WhatsApp, con mensaje según estado */export function adminWhatsappLink(t: {
   number: number;
   nombre: string;
   apellido: string;
@@ -292,4 +295,108 @@ export function adminWhatsappLink(t: {
     cancelado: `${base} Tu reserva fue cancelada y el número quedó liberado. Escribinos si querés elegir otro.`
   };
   return `https://wa.me/${clean}?text=${encodeURIComponent(per[t.status])}`;
+}
+
+// ============ RULETA DE PREMIOS ============
+
+export type WheelKind = "discount" | "bonus" | "multiplier";
+
+export interface WheelSegment {
+  id: string;
+  label: string;
+  kind: WheelKind;
+  value: number;
+  weight: number;
+  active: boolean;
+  sort_order: number;
+}
+
+export interface WheelConfig {
+  id: number;
+  enabled: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  daily_from: string | null; // 'HH:MM' America/Argentina
+  daily_to: string | null;
+  weekdays: number[]; // 0=domingo
+  prize_minutes: number;
+  upsell_enabled: boolean;
+  upsell_seconds: number;
+}
+
+export interface WheelPrize {
+  spinId: string;
+  segmentId: string | null;
+  label: string;
+  kind: WheelKind;
+  value: number;
+  expiresAt: string; // ISO
+}
+
+/** ¿Ruleta vigente ahora? Evalúa en hora Argentina (el servidor manda, el front obedece). */
+export function wheelActiveNow(cfg: WheelConfig, now = new Date()): boolean {
+  if (!cfg.enabled) return false;
+  const t = now.getTime();
+  if (cfg.starts_at && t < new Date(cfg.starts_at).getTime()) return false;
+  if (cfg.ends_at && t > new Date(cfg.ends_at).getTime()) return false;
+  const parts = new Intl.DateTimeFormat("es-AR", {
+    timeZone: "America/Argentina/Buenos_Aires",
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).formatToParts(now);
+  const get = (k: string) => parts.find((p) => p.type === k)?.value ?? "";
+  // weekday corto es-AR: 'dom.' 'lun.' 'mar.' 'mié.' 'jue.' 'vie.' 'sáb.'
+  const wdMap: Record<string, number> = {
+    "dom": 0, "lun": 1, "mar": 2, "mié": 3, "mie": 3, "jue": 4, "vie": 5, "sáb": 6, "sab": 6
+  };
+  const wdKey = get("weekday").replace(".", "").toLowerCase();
+  const wd = wdMap[wdKey] ?? -1;
+  const days = cfg.weekdays ?? [0, 1, 2, 3, 4, 5, 6];
+  if (days.length > 0 && !days.includes(wd)) return false;
+  const hm = `${get("hour")}:${get("minute")}`;
+  if (cfg.daily_from && cfg.daily_to && cfg.daily_from !== cfg.daily_to) {
+    if (cfg.daily_from <= cfg.daily_to) {
+      if (hm < cfg.daily_from || hm > cfg.daily_to) return false;
+    } else {
+      // Ventana nocturna que cruza medianoche (ej. 20:00–02:00)
+      if (hm < cfg.daily_from && hm > cfg.daily_to) return false;
+    }
+  }
+  return true;
+}
+
+/** Números libres al azar (para chances de regalo / multiplicador), excluye elegidos */
+export function pickFreeNumbers(
+  count: number, taken: Set<number>, exclude: number[],
+  min = MIN_NUMBER, max = MAX_NUMBER
+): number[] {
+  const out: number[] = [];
+  const skip = new Set([...exclude]);
+  if (count <= 0) return out;
+  // Barrido aleatorio con tope de intentos, luego barrido lineal como respaldo
+  let guard = 0;
+  while (out.length < count && guard < count * 40 + 500) {
+    guard++;
+    const n = min + Math.floor(Math.random() * (max - min + 1));
+    if (taken.has(n) || skip.has(n)) continue;
+    skip.add(n);
+    out.push(n);
+  }
+  if (out.length < count) {
+    for (let n = min; n <= max && out.length < count; n++) {
+      if (taken.has(n) || skip.has(n)) continue;
+      skip.add(n);
+      out.push(n);
+    }
+  }
+  return out.sort((a, b) => a - b);
+}
+
+/** Texto corto del premio para UI/WhatsApp */
+export function prizeShort(p: { kind: WheelKind; value: number; label: string }): string {
+  if (p.kind === "discount") return `${Number(p.value)}% OFF`;
+  if (p.kind === "bonus") return `+${Number(p.value)} de regalo`;
+  return `x${Number(p.value)} tu pack`;
 }

@@ -1,13 +1,16 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   isValidNumber, packOptions, formatShort, bestQuote, breakdownText, whatsappBatchLink,
-  type Promo
+  pickFreeNumbers, prizeShort,
+  type Promo, type WheelPrize, type WheelSegment
 } from "@/lib/tickets";
 import { createClient } from "@/lib/supabaseClient";
-import { ChatIcon, CheckIcon, SearchIcon, TicketIcon, XIcon } from "./icons";
+import { ChatIcon, CheckIcon, SearchIcon, SparkIcon, TicketIcon, XIcon } from "./icons";
 import CopyButton from "./CopyButton";
+import PrizeWheel from "./PrizeWheel";
+import LastChanceModal from "./LastChanceModal";
 
 interface Props {
   taken: number[];
@@ -47,6 +50,94 @@ export default function RaffleClient(props: Props) {
   const [batch, setBatch] = useState<number[]>([]);
   const [error, setError] = useState("");
 
+  // Ruleta: config vigente, premio activo (validado por servidor), session key propia
+  const [wheelSegs, setWheelSegs] = useState<WheelSegment[]>([]);
+  const [wheelMinutes, setWheelMinutes] = useState(20);
+  const [upsellCfg, setUpsellCfg] = useState({ enabled: true, seconds: 20 });
+  const [showWheel, setShowWheel] = useState(false);
+  const [prize, setPrize] = useState<WheelPrize | null>(null);
+  const [prizeLeft, setPrizeLeft] = useState("");
+  const [bonusNums, setBonusNums] = useState<number[]>([]);
+  const [showUpsell, setShowUpsell] = useState(false);
+  const [doneTotal, setDoneTotal] = useState(0);
+  const [donePrizeLabel, setDonePrizeLabel] = useState("");
+  const sessionKey = useRef("");
+  const upsellShown = useRef(false);
+
+  useEffect(() => {
+    try {
+      let k = localStorage.getItem("tnWheel");
+      if (!k) {
+        k = crypto.randomUUID();
+        localStorage.setItem("tnWheel", k);
+      }
+      sessionKey.current = k;
+    } catch {
+      sessionKey.current = `tmp-${Date.now()}`;
+    }
+    (async () => {
+      try {
+        const res = await fetch("/api/wheel");
+        const j = await res.json().catch(() => ({}));
+        if (!j.active || !Array.isArray(j.segments) || j.segments.length === 0) return;
+        setWheelSegs(j.segments);
+        setWheelMinutes(Number(j.prize_minutes ?? 20));
+        setUpsellCfg({ enabled: !!j.upsell_enabled, seconds: Number(j.upsell_seconds ?? 20) });
+        // Restaura premio vigente de la sesión (revalidado en servidor)
+        try {
+          const saved = localStorage.getItem("tnPrize");
+          if (saved) {
+            const p = JSON.parse(saved) as WheelPrize;
+            const v = await fetch("/api/wheel", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ op: "validate", session_key: sessionKey.current, spin_id: p.spinId })
+            });
+            const vj = await v.json().catch(() => ({}));
+            if (vj.ok && vj.prize) {
+              setPrize(vj.prize as WheelPrize);
+            } else {
+              localStorage.removeItem("tnPrize");
+            }
+          }
+        } catch { /* sin premio guardado */ }
+        // Popup de entrada: 1 vez por sesión
+        try {
+          if (!sessionStorage.getItem("tnWheelShown")) {
+            sessionStorage.setItem("tnWheelShown", "1");
+            window.setTimeout(() => setShowWheel(true), 1200);
+          }
+        } catch {
+          window.setTimeout(() => setShowWheel(true), 1200);
+        }
+      } catch { /* ruleta no disponible */ }
+    })();
+  }, []);
+
+  // Countdown del premio (al vencer se libera solo)
+  useEffect(() => {
+    if (!prize) {
+      setPrizeLeft("");
+      return;
+    }
+    const update = () => {
+      const ms = new Date(prize.expiresAt).getTime() - Date.now();
+      if (ms <= 0) {
+        setPrize(null);
+        setBonusNums([]);
+        try { localStorage.removeItem("tnPrize"); } catch { /* noop */ }
+        setPrizeLeft("");
+        return;
+      }
+      const m = Math.floor(ms / 60000);
+      const s = Math.floor((ms % 60000) / 1000);
+      setPrizeLeft(`${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+    };
+    update();
+    const t = setInterval(update, 1000);
+    return () => clearInterval(t);
+  }, [prize]);
+
   const totalPages = Math.max(1, Math.ceil((max - min + 1) / PAGE_SIZE));
   const pageStart = min + page * PAGE_SIZE;
   const pageEnd = Math.min(pageStart + PAGE_SIZE - 1, max);
@@ -74,6 +165,17 @@ export default function RaffleClient(props: Props) {
   const reserveLabel = pack.open
     ? `${selected.length} número${selected.length === 1 ? "" : "s"}`
     : `${selected.length} números (${pack.name} ×${selected.length / pack.quantity})`;
+
+  // Premio de ruleta aplicado: descuento al total y/o números gratis auto-asignados
+  const prizeExtra = !prize ? 0 : prize.kind === "bonus"
+    ? Math.floor(Number(prize.value))
+    : prize.kind === "multiplier"
+      ? Math.max(0, Math.round(selected.length * (Number(prize.value) - 1)))
+      : 0;
+  const finalTotal = prize?.kind === "discount" && quote.total > 0
+    ? Math.max(0, Math.round(quote.total * (1 - Number(prize.value) / 100)))
+    : quote.total;
+  const prizeSaving = quote.total - finalTotal;
 
   const toggle = (n: number) => {
     if (takenSet.has(n)) return;
@@ -119,10 +221,38 @@ export default function RaffleClient(props: Props) {
       return;
     }
     setError("");
+    // Si hay premio, se revalida en el servidor antes de grabar (anti-abuso)
+    let prizeCols = {};
+    let extras: number[] = [];
+    let hasPrize = false;
+    if (prize) {
+      try {
+        const v = await fetch("/api/wheel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "validate", session_key: sessionKey.current, spin_id: prize.spinId })
+        });
+        const vj = await v.json().catch(() => ({}));
+        if (!vj.ok) {
+          setPrize(null);
+          setBonusNums([]);
+          try { localStorage.removeItem("tnPrize"); } catch { /* noop */ }
+          setError("Tu premio de la ruleta venció. Podés reservar igual sin premio.");
+          return;
+        }
+        prizeCols = { prize_label: prize.label, prize_kind: prize.kind, prize_value: prize.value };
+        hasPrize = true;
+        if (prize.kind !== "discount") {
+          extras = pickFreeNumbers(prizeExtra, takenSet, selected, min, max);
+        }
+      } catch {
+        setError("No se pudo validar tu premio. Intentá de nuevo.");
+        return;
+      }
+    }
     setSaving(true);
     const batchId = crypto.randomUUID();
-    const rows = selected.map((number) => ({
-      number,
+    const base = {
       nombre: form.nombre.trim(),
       apellido: form.apellido.trim(),
       dni: form.dni.trim(),
@@ -130,19 +260,89 @@ export default function RaffleClient(props: Props) {
       status: "pendiente",
       source: "web",
       batch_id: batchId
-    }));
+    };
+    const rows = [
+      ...selected.map((number) => ({ ...base, number, ...(hasPrize ? { is_bonus: false, ...prizeCols } : {}) })),
+      ...extras.map((number) => ({ ...base, number, ...(hasPrize ? { is_bonus: true, ...prizeCols } : {}) }))
+    ];
     const { error } = await supabase.from("tickets").insert(rows);
     setSaving(false);
     if (error) {
       setError("Uno de los números se acaba de ocupar. Revisá la selección.");
       return;
     }
-    setBatch([...selected]);
+    // Marca el premio como usado (si falla, el admin igual ve el premio en el lote)
+    if (prize) {      try {
+        await fetch("/api/wheel", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ op: "apply", session_key: sessionKey.current, spin_id: prize.spinId, batch_id: batchId })
+        });
+      } catch { /* noop */ }
+      setDonePrizeLabel(` (${prizeShort(prize)})`);
+      setPrize(null);
+      setBonusNums([]);
+      try { localStorage.removeItem("tnPrize"); } catch { /* noop */ }
+    } else {
+      setDonePrizeLabel("");
+    }
+    setDoneTotal(finalTotal);
+    setBatch([...selected, ...extras]);
     setDone(true);
   };
 
+  const usePrizeNow = (p: WheelPrize) => {
+    setPrize(p);
+    try { localStorage.setItem("tnPrize", JSON.stringify(p)); } catch { /* noop */ }
+    setShowWheel(false);
+  };
+
+  // Upsell "última oportunidad": al tocar Reservar (y por exit-intent en desktop), 1 vez por sesión
+  const openReserveFlow = () => {
+    if (!canReserve) return;
+    if (upsellCfg.enabled && quote.nudge && !upsellShown.current && !done) {
+      setShowUpsell(true);
+      return;
+    }
+    openModal();
+  };
+
+  const acceptUpsell = () => {
+    if (quote.nudge) {
+      const extra = pickFreeNumbers(quote.nudge.need, takenSet, [...selected, ...bonusNums], min, max);
+      setSelected((prev) => [...prev, ...extra].sort((a, b) => a - b));
+    }
+    upsellShown.current = true;
+    setShowUpsell(false);
+    openModal();
+  };
+
+  const declineUpsell = () => {
+    upsellShown.current = true;
+    setShowUpsell(false);
+    if (!done) openModal();
+  };
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const onOut = (e: MouseEvent) => {
+      if (e.clientY > 8 || !e.relatedTarget) return;
+      if (!upsellCfg.enabled || upsellShown.current || showUpsell || showModal) return;
+      if (selected.length === 0 || !quote.nudge || done) return;
+      setShowUpsell(true);
+    };
+    document.addEventListener("mouseout", onOut);
+    return () => document.removeEventListener("mouseout", onOut);
+  }, [upsellCfg.enabled, showUpsell, showModal, selected.length, quote.nudge, done]);
+
   const openModal = () => {
     if (!canReserve) return;
+    // Pre-asigna los números de regalo para mostrarlos antes de confirmar
+    if (prize && prize.kind !== "discount" && prizeExtra > 0) {
+      setBonusNums(pickFreeNumbers(prizeExtra, takenSet, selected, min, max));
+    } else {
+      setBonusNums([]);
+    }
     setDone(false);
     setError("");
     setShowModal(true);
@@ -150,13 +350,15 @@ export default function RaffleClient(props: Props) {
 
   const waNumbers = done ? batch : selected;
   const waDetail = quote.parts.length > 0 ? breakdownText(quote.parts) : "";
+  const waPrizeSuffix = done ? donePrizeLabel : prize ? ` (${prizeShort(prize)})` : "";
   const waPackName = (!pack.open
     ? `${pack.name} ×${Math.max(1, Math.round(waNumbers.length / pack.quantity))}`
-    : waDetail || (waNumbers.length === 1 ? "Número elegido" : "Números elegidos"));
+    : waDetail || (waNumbers.length === 1 ? "Número elegido" : "Números elegidos"))
+    + waPrizeSuffix;
   const wa = whatsappBatchLink(whatsapp, {
     numbers: waNumbers,
     packName: waPackName,
-    total: quote.total,
+    total: done ? doneTotal : finalTotal,
     currency,
     ...form
   });
@@ -290,9 +492,18 @@ export default function RaffleClient(props: Props) {
               Elegidos ({selected.length}{pack.open ? "" : `/${pack.quantity}`})
             </p>
             <p className="tnum shrink-0 font-num text-lg font-extrabold leading-none">
-              {formatShort(quote.total)}
+              {prizeSaving > 0 && (
+                <span className="mr-1.5 align-middle text-sm font-semibold text-slate-400 line-through">{formatShort(quote.total)}</span>
+              )}
+              {formatShort(finalTotal)}
             </p>
           </div>
+          {prize && (
+            <p role="status" className="tnum mt-1.5 flex items-center justify-between gap-2 rounded-xl bg-brand-600/10 px-2.5 py-1.5 text-xs font-bold text-brand-700 dark:text-brand-300">
+              <span>🎁 {prize.label}{prizeExtra > 0 ? ` · +${prizeExtra} de regalo` : ""}</span>
+              <span className="shrink-0">⏱ {prizeLeft || "--:--"}</span>
+            </p>
+          )}
           {quote.parts.length > 0 && (
             <p className="tnum mt-0.5 truncate text-right text-[11px] text-slate-500 dark:text-slate-400">{breakdownText(quote.parts)}</p>
           )}
@@ -321,7 +532,7 @@ export default function RaffleClient(props: Props) {
             </p>
           )}
           <div className="mt-2.5 flex items-center gap-2">
-            <button onClick={openModal} disabled={!canReserve}
+            <button onClick={openReserveFlow} disabled={!canReserve}
               className="flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-brand-600 text-[15px] font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-50">
               <CheckIcon className="h-5 w-5 shrink-0" />
               Reservar
@@ -357,9 +568,19 @@ export default function RaffleClient(props: Props) {
                 {(done ? batch : selected).join(" · ")}
               </p>
               <p className="mt-1 text-sm font-semibold text-brand-100">
-                Total: {formatShort(quote.total)}
+                Total: {formatShort(done ? doneTotal : finalTotal)}
                 {quote.parts.length > 0 && <span className="font-normal opacity-90"> · {breakdownText(quote.parts)}</span>}
               </p>
+              {!done && prize && (
+                <p className="tnum mt-1.5 w-fit rounded-lg bg-white/15 px-2.5 py-1 text-xs font-bold">
+                  🎁 {prize.label} · vence en {prizeLeft || "--:--"}
+                </p>
+              )}
+              {!done && bonusNums.length > 0 && (
+                <p className="tnum mt-1 text-xs font-semibold text-brand-100">
+                  + de regalo: {bonusNums.join(" · ")}
+                </p>
+              )}
             </div>
 
             {!done ? (
@@ -428,6 +649,40 @@ export default function RaffleClient(props: Props) {
           </div>
         </div>,
         document.body
+      )}
+
+      {/* Ruleta de premios (popup de entrada) */}
+      {showWheel && wheelSegs.length > 0 && typeof document !== "undefined" && (
+        <PrizeWheel
+          segments={wheelSegs}
+          sessionKey={sessionKey.current}
+          prizeMinutes={wheelMinutes}
+          onPrize={usePrizeNow}
+          onClose={() => setShowWheel(false)}
+        />
+      )}
+
+      {/* Botón flotante para reabrir la ruleta si la cerró sin girar */}
+      {!showWheel && !prize && wheelSegs.length > 0 && (
+        <button onClick={() => setShowWheel(true)} aria-label="Abrir ruleta de premios"
+          className="fixed bottom-4 right-4 z-40 flex h-[52px] w-[52px] items-center justify-center rounded-full bg-gradient-to-br from-brand-600 to-brand-800 text-white shadow-glow transition hover:scale-105 active:scale-95">
+          <SparkIcon className="h-6 w-6" />
+        </button>
+      )}
+
+      {/* Upsell última oportunidad */}
+      {showUpsell && quote.nudge && (
+        <LastChanceModal
+          open={showUpsell}
+          seconds={upsellCfg.seconds}
+          nowCount={selected.length}
+          nowTotal={finalTotal}
+          addCount={quote.nudge.need}
+          addExtra={quote.nudge.extra}
+          currency={currency}
+          onAccept={acceptUpsell}
+          onDecline={declineUpsell}
+        />
       )}
     </div>
   );

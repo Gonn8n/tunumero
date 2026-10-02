@@ -263,3 +263,100 @@ create index if not exists tickets_batch_idx on public.tickets (batch_id);
 insert into public.promos (name, quantity, price, sort_order)
   select 'Promo 3', 3, 5000, 0
   where not exists (select 1 from public.promos);
+
+-- ============ RULETA DE PREMIOS (Opción A: maestro + 1 ventana) ============
+
+-- Config global (1 fila): maestro, vigencia, ventana diaria ART, días, timers
+create table if not exists public.wheel_config (
+  id int primary key default 1,
+  enabled boolean not null default false,
+  starts_at timestamptz,
+  ends_at timestamptz,
+  daily_from text, -- 'HH:MM' America/Argentina, null = todo el día
+  daily_to text,
+  weekdays int[] not null default array[0,1,2,3,4,5,6], -- 0=domingo
+  prize_minutes int not null default 20,
+  upsell_enabled boolean not null default true,
+  upsell_seconds int not null default 20,
+  constraint wheel_single_row check (id = 1)
+);
+
+-- Catálogo de premios: discount (% off) | bonus (+N chances) | multiplier (x2/x3)
+create table if not exists public.wheel_segments (
+  id uuid primary key default gen_random_uuid(),
+  label text not null default 'Premio',
+  kind text not null check (kind in ('discount','bonus','multiplier')),
+  value numeric(12,2) not null check (value > 0),
+  weight int not null default 10 check (weight >= 0),
+  active boolean not null default true,
+  sort_order int not null default 0,
+  created_at timestamptz default now()
+);
+
+-- Giros: 1 vigente por sesión; el servidor elige el premio (el front solo anima)
+create table if not exists public.wheel_spins (
+  id uuid primary key default gen_random_uuid(),
+  session_key text not null,
+  segment_id uuid references public.wheel_segments(id) on delete set null,
+  label text not null,
+  kind text not null,
+  value numeric(12,2) not null,
+  expires_at timestamptz not null,
+  used_at timestamptz,
+  used_batch_id uuid,
+  created_at timestamptz default now()
+);
+create index if not exists wheel_spins_session_idx on public.wheel_spins (session_key);
+
+alter table public.wheel_config enable row level security;
+alter table public.wheel_segments enable row level security;
+alter table public.wheel_spins enable row level security;
+
+drop policy if exists "wheel config public read" on public.wheel_config;
+create policy "wheel config public read" on public.wheel_config for select using (true);
+drop policy if exists "wheel config admin all" on public.wheel_config;
+create policy "wheel config admin all" on public.wheel_config
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+drop policy if exists "wheel segments public read" on public.wheel_segments;
+create policy "wheel segments public read" on public.wheel_segments for select using (true);
+drop policy if exists "wheel segments admin all" on public.wheel_segments;
+create policy "wheel segments admin all" on public.wheel_segments
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- Spins: lectura pública (ids imposibles de adivinar), alta anónima,
+-- y solo marcar usado una vez (anti doble-uso desde el front).
+drop policy if exists "wheel spins public read" on public.wheel_spins;
+create policy "wheel spins public read" on public.wheel_spins for select using (true);
+drop policy if exists "wheel spins anon insert" on public.wheel_spins;
+create policy "wheel spins anon insert" on public.wheel_spins
+  for insert with check (expires_at > now() and expires_at <= now() + interval '2 hours');
+drop policy if exists "wheel spins mark used" on public.wheel_spins;
+create policy "wheel spins mark used" on public.wheel_spins
+  for update using (used_at is null) with check (used_at is not null);
+drop policy if exists "wheel spins admin all" on public.wheel_spins;
+create policy "wheel spins admin all" on public.wheel_spins
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+insert into public.wheel_config (id) values (1)
+  on conflict (id) do nothing;
+
+-- Catálogo inicial estilo referencia: 30/20/10% off, x2/x3, +1/+3/+5
+insert into public.wheel_segments (label, kind, value, weight, sort_order)
+  select * from (values
+    ('30% de descuento', 'discount', 30, 8, 0),
+    ('+5 chances', 'bonus', 5, 10, 1),
+    ('x2 tu pack', 'multiplier', 2, 14, 2),
+    ('10% de descuento', 'discount', 10, 22, 3),
+    ('+3 chances', 'bonus', 3, 16, 4),
+    ('20% de descuento', 'discount', 20, 12, 5),
+    ('x3 tu pack', 'multiplier', 3, 8, 6),
+    ('+1 chance', 'bonus', 1, 10, 7)
+  ) as v(label, kind, value, weight, sort_order)
+  where not exists (select 1 from public.wheel_segments);
+
+-- Premio aplicado por lote de reserva (misma fila por número del batch)
+alter table public.tickets add column if not exists prize_label text;
+alter table public.tickets add column if not exists prize_kind text;
+alter table public.tickets add column if not exists prize_value numeric(12,2);
+alter table public.tickets add column if not exists is_bonus boolean not null default false;

@@ -4,16 +4,17 @@ import { createClient } from "@/lib/supabaseClient";
 import ThemeToggle from "@/components/ThemeToggle";
 import PhotoManager from "@/components/PhotoManager";
 import PromoManager from "@/components/PromoManager";
+import WheelManager from "@/components/WheelManager";
 import DownloadExcel from "@/components/DownloadExcel";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, groupOrders, bestQuote, breakdownText, formatShort, type Ticket, type Promo, type OrderGroup } from "@/lib/tickets";
 import {
   CheckIcon, ChatIcon, ClockIcon, CogIcon, LogoutIcon, PlusIcon,
-  ShieldIcon, TicketIcon, UsersIcon, XIcon
+  ShieldIcon, SparkIcon, TicketIcon, UsersIcon, XIcon
 } from "@/components/icons";
 
-type Tab = "pendiente" | "confirmado" | "cancelado" | "historial" | "reservar" | "config";
+type Tab = "pendiente" | "confirmado" | "cancelado" | "historial" | "reservar" | "ruleta" | "config";
 
 interface HistoryEntry {
   id: number;
@@ -219,7 +220,7 @@ export default function AdminPanel() {
   };
 
   const rows = tickets.filter((t) => {
-    if (tab === "reservar" || tab === "config" || tab === "historial") return false;
+    if (tab === "reservar" || tab === "ruleta" || tab === "config" || tab === "historial") return false;
     if (tab === "pendiente") return t.status === "pendiente" || t.status === "reservado";
     return t.status === tab;
   });
@@ -246,6 +247,7 @@ export default function AdminPanel() {
     { id: "cancelado", label: "Cancelados", count: count("cancelado") },
     { id: "historial", label: "Historial" },
     { id: "reservar", label: "Reservar" },
+    { id: "ruleta", label: "Ruleta" },
     { id: "config", label: "Config" }
   ];
 
@@ -343,17 +345,18 @@ export default function AdminPanel() {
             </button>
           ))}
           </div>
-          <div className="mt-1.5 grid grid-cols-3 gap-1.5 lg:mt-0 lg:contents">
-          {tabs.filter((t) => ["historial", "reservar", "config"].includes(t.id)).map((t) => (
+          <div className="mt-1.5 grid grid-cols-4 gap-1.5 lg:mt-0 lg:contents">
+          {tabs.filter((t) => ["historial", "reservar", "ruleta", "config"].includes(t.id)).map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               aria-current={tab === t.id ? "page" : undefined}
-              className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border px-2 text-[13px] font-semibold transition lg:h-10 lg:px-3.5 lg:text-sm ${
+              className={`flex h-11 items-center justify-center gap-1 rounded-xl border px-1 text-[12px] font-semibold transition lg:h-10 lg:gap-1.5 lg:px-3.5 lg:text-sm ${
                 tab === t.id ? "border-transparent bg-brand-600 text-white shadow-glow" : "border-slate-200 text-slate-500 hover:border-brand-300 hover:bg-slate-50 dark:border-white/10 dark:text-slate-400 dark:hover:bg-night-800"
               }`}
             >
               {t.id === "reservar" && <PlusIcon className="h-4 w-4 shrink-0" />}
+              {t.id === "ruleta" && <SparkIcon className="h-4 w-4 shrink-0" />}
               {t.id === "config" && <CogIcon className="h-4 w-4 shrink-0" />}
               {t.label}
             </button>
@@ -449,7 +452,7 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {(tab !== "reservar" && tab !== "config" && tab !== "historial") && (
+        {(tab !== "reservar" && tab !== "ruleta" && tab !== "config" && tab !== "historial") && (
           <div className="hidden overflow-x-auto rounded-2xl border border-brand-100 bg-white shadow-card sm:block dark:border-white/10 dark:bg-night-850">
             <table className="w-full text-sm">
               <thead>
@@ -500,6 +503,9 @@ export default function AdminPanel() {
                       {q.parts.length > 0 && (
                         <span className="block text-[11px] font-medium text-slate-400">{breakdownText(q.parts)}</span>
                       )}
+                      {first.prize_label && (
+                        <span className="mt-0.5 block text-[11px] font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</span>
+                      )}
                     </td>
                     <td className="p-3">
                       <div className="flex flex-col items-end gap-1.5">
@@ -549,7 +555,7 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {(tab !== "reservar" && tab !== "config" && tab !== "historial") && (
+        {(tab !== "reservar" && tab !== "ruleta" && tab !== "config" && tab !== "historial") && (
           <div className="space-y-2 sm:hidden">
             {groups.map((g) => {
               const q = groupQuote(g);
@@ -572,6 +578,9 @@ export default function AdminPanel() {
                       Total: {formatShort(q.total)}
                       {q.parts.length > 0 && <span className="ml-1 text-[11px] font-medium text-slate-400">{breakdownText(q.parts)}</span>}
                     </p>
+                    {first.prize_label && (
+                      <p className="mt-0.5 text-xs font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</p>
+                    )}
                   </div>
                   <a
                     href={adminWhatsappLink({ number: g.numbers[0], nombre: g.nombre, apellido: g.apellido, telefono: first.telefono, status: first.status })}
@@ -654,6 +663,10 @@ export default function AdminPanel() {
               Reservar
             </button>
           </section>
+        )}
+
+        {tab === "ruleta" && (
+          <WheelManager say={say} />
         )}
 
         {tab === "config" && (
