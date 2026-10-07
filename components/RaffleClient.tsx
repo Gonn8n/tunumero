@@ -24,6 +24,7 @@ interface Props {
   unitPrice: number;
   currency: string;
   promos: Promo[];
+  mpEnabled: boolean;
 }
 
 const PAGE_SIZE = 100;
@@ -32,7 +33,7 @@ const inputCls =
   "h-12 w-full rounded-xl border border-slate-300 bg-white px-4 text-slate-900 placeholder:text-slate-400 transition focus:border-brand-500 dark:border-white/10 dark:bg-night-800 dark:text-white dark:placeholder:text-slate-500";
 
 export default function RaffleClient(props: Props) {
-  const { taken, whatsapp, min, max, alias, cuit, titular, bank, unitPrice, currency, promos } = props;
+  const { taken, whatsapp, min, max, alias, cuit, titular, bank, unitPrice, currency, promos, mpEnabled } = props;
   const supabase = createClient();
   const takenSet = useMemo(() => new Set(taken), [taken]);
   const packs = useMemo(() => packOptions(unitPrice, currency, promos), [unitPrice, currency, promos]);
@@ -61,6 +62,28 @@ export default function RaffleClient(props: Props) {
   const [showUpsell, setShowUpsell] = useState(false);
   const [doneTotal, setDoneTotal] = useState(0);
   const [donePrizeLabel, setDonePrizeLabel] = useState("");
+  const [batchKey, setBatchKey] = useState("");
+  const [mpBusy, setMpBusy] = useState(false);
+  const [mpError, setMpError] = useState("");
+
+  const payMP = async () => {
+    if (mpBusy || !batchKey) return;
+    setMpBusy(true);
+    setMpError("");
+    try {
+      const res = await fetch("/api/mp/checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch_id: batchKey })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.init_point) throw new Error(j.error ?? "No se pudo iniciar el pago");
+      window.location.href = j.init_point as string;
+    } catch (e) {
+      setMpBusy(false);
+      setMpError(e instanceof Error ? e.message : "Error al iniciar el pago");
+    }
+  };
   const sessionKey = useRef("");
   const upsellShown = useRef(false);
 
@@ -287,6 +310,8 @@ export default function RaffleClient(props: Props) {
       setDonePrizeLabel("");
     }
     setDoneTotal(finalTotal);
+    setBatchKey(batchId);
+    setMpError("");
     setBatch([...selected, ...extras]);
     setDone(true);
   };
@@ -615,8 +640,18 @@ export default function RaffleClient(props: Props) {
                 </span>
                 <h3 className="mt-3 text-lg font-bold">¡Reserva registrada!</h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Quedó <b>pendiente de pago</b>. Enviá el comprobante de pago por WhatsApp para que un administrador lo valide.
+                  Quedó <b>pendiente de pago</b>. {mpEnabled ? "Pagá online o por transferencia." : "Aboná por transferencia."}
                 </p>
+                {mpEnabled && (
+                  <>
+                    <button onClick={payMP} disabled={mpBusy}
+                      className="mt-4 flex min-h-[52px] w-full items-center justify-center gap-2 rounded-xl bg-[#009ee3] px-4 py-3 font-bold text-white transition hover:brightness-110 active:scale-[.98] disabled:opacity-60">
+                      {mpBusy ? "Abriendo MercadoPago…" : "Pagar con MercadoPago"}
+                    </button>
+                    {mpError && <p role="alert" className="mt-2 text-sm font-medium text-rose-500">{mpError}</p>}
+                    <p className="mt-3 text-xs font-semibold uppercase tracking-widest text-slate-400">o por transferencia</p>
+                  </>
+                )}
                 <div className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3 text-left dark:border-white/10 dark:bg-night-800">
                   <div className="min-w-0">
                     <p className="text-xs font-medium uppercase tracking-wider text-slate-500 dark:text-slate-400">Alias para abonar</p>

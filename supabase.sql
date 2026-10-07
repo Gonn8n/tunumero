@@ -360,3 +360,45 @@ alter table public.tickets add column if not exists prize_label text;
 alter table public.tickets add column if not exists prize_kind text;
 alter table public.tickets add column if not exists prize_value numeric(12,2);
 alter table public.tickets add column if not exists is_bonus boolean not null default false;
+
+-- ============ MERCADOPAGO (Checkout Pro + confirmación automática) ============
+
+-- Interruptor de cobro con MP (visible en Config del admin)
+alter table public.raffle_settings add column if not exists mp_enabled boolean not null default true;
+
+-- Pagos: 1 fila por intento (pendiente) → se actualiza al llegar el webhook
+create table if not exists public.mp_payments (
+  id uuid primary key default gen_random_uuid(),
+  batch_id uuid not null,
+  mp_preference_id text,
+  mp_payment_id text,
+  status text not null default 'pending'
+    check (status in ('pending','approved','rejected','review')),
+  amount numeric(12,2) not null,
+  currency text not null default 'ARS',
+  payer_email text,
+  created_at timestamptz default now()
+);
+create index if not exists mp_payments_batch_idx on public.mp_payments (batch_id);
+create index if not exists mp_payments_payment_idx on public.mp_payments (mp_payment_id);
+
+alter table public.mp_payments enable row level security;
+
+-- Solo lectura/escritura vía API server (service = anon sin sesión);
+-- el admin autenticado puede ver todo.
+drop policy if exists "mp payments admin read" on public.mp_payments;
+create policy "mp payments admin read" on public.mp_payments
+  for select using (auth.role() = 'authenticated');
+drop policy if exists "mp payments admin all" on public.mp_payments;
+create policy "mp payments admin all" on public.mp_payments
+  for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+-- La API server opera con anon key: puede registrar intentos y actualizar estados.
+-- Es seguro porque la confirmación de tickets SOLO ocurre cuando el webhook
+-- re-consulta el pago a la API de MercadoPago (nunca confía en esta tabla).
+drop policy if exists "mp payments api insert" on public.mp_payments;
+create policy "mp payments api insert" on public.mp_payments
+  for insert with check (status = 'pending' and amount > 0);
+drop policy if exists "mp payments api update" on public.mp_payments;
+create policy "mp payments api update" on public.mp_payments
+  for update using (true) with check (amount > 0);

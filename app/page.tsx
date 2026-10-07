@@ -162,6 +162,7 @@ export default async function Home() {
             unitPrice={Number(settings.ticket_price)}
             currency={settings.currency}
             promos={promos}
+            mpEnabled={(settings as { mp_enabled?: boolean }).mp_enabled !== false}
           />
         </section>
 

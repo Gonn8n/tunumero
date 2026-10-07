@@ -38,7 +38,7 @@ export default function AdminPanel() {
     title: "", subtitle: "", description: "", draw_date: "",
     ticket_price: 2000, whatsapp_number: "", alias: "",
     transfer_holder: "", transfer_cbu: "", transfer_bank: "",
-    min_number: 0, max_number: 4999
+    min_number: 0, max_number: 4999, mp_enabled: true
   });
   const [manual, setManual] = useState({ number: "", nombre: "", apellido: "", dni: "", telefono: "" });
   const [msg, setMsg] = useState("");
@@ -49,6 +49,7 @@ export default function AdminPanel() {
   const [histFilter, setHistFilter] = useState("");
   const [myName, setMyName] = useState("");
   const [promos, setPromos] = useState<Promo[]>([]);
+  const [mpPaid, setMpPaid] = useState<Record<string, string>>({});
   const [newPromo, setNewPromo] = useState({ name: "Promo 3", quantity: 3, price: 5000 });
   const router = useRouter();
 
@@ -80,6 +81,16 @@ export default function AdminPanel() {
     if (hist) setHistory(hist as HistoryEntry[]);
     const { data: pr } = await supabase.from("promos").select("*").order("sort_order", { ascending: true });
     if (pr) setPromos(pr as Promo[]);
+    try {
+      const { data: pays } = await supabase.from("mp_payments").select("batch_id,status").order("created_at", { ascending: false }).limit(1000);
+      if (pays) {
+        const map: Record<string, string> = {};
+        for (const p of pays as { batch_id: string; status: string }[]) {
+          if (!(p.batch_id in map)) map[p.batch_id] = p.status;
+        }
+        setMpPaid(map);
+      }
+    } catch { /* tabla MP aún no creada: sin badges */ }
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
     if (s) setSettings({
       title: s.title ?? "", subtitle: s.subtitle ?? "", description: s.description ?? "",
@@ -87,7 +98,8 @@ export default function AdminPanel() {
       ticket_price: s.ticket_price ?? 2000, whatsapp_number: s.whatsapp_number ?? "",
       alias: s.alias ?? "", transfer_holder: s.transfer_holder ?? "",
       transfer_cbu: s.transfer_cbu ?? "", transfer_bank: s.transfer_bank ?? "",
-      min_number: s.min_number ?? 0, max_number: s.max_number ?? 4999
+      min_number: s.min_number ?? 0, max_number: s.max_number ?? 4999,
+      mp_enabled: (s as { mp_enabled?: boolean }).mp_enabled !== false
     });
   };
 
@@ -178,7 +190,7 @@ export default function AdminPanel() {
     }
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("raffle_settings").update({
+    const payload = {
       title: settings.title, subtitle: settings.subtitle, description: settings.description,
       draw_date: settings.draw_date ? new Date(settings.draw_date).toISOString() : null,
       ticket_price: Number(settings.ticket_price),
@@ -186,8 +198,18 @@ export default function AdminPanel() {
       alias: settings.alias, transfer_holder: settings.transfer_holder,
       transfer_cbu: settings.transfer_cbu, transfer_bank: settings.transfer_bank,
       min_number: newMin, max_number: newMax,
+      mp_enabled: !!settings.mp_enabled,
       updated_at: new Date().toISOString(), updated_by: user?.id ?? null
-    }).eq("id", 1);
+    };
+    let { error } = await supabase.from("raffle_settings").update(payload).eq("id", 1);
+    if (error && /mp_enabled/i.test(error.message)) {
+      // SQL de MP aún no corrido: guarda todo lo demás igual
+      const legacy = { ...payload };
+      delete (legacy as { mp_enabled?: boolean }).mp_enabled;
+      const retry = await supabase.from("raffle_settings").update(legacy).eq("id", 1);
+      error = retry.error;
+      if (!error) say("Configuración guardada (sin interruptor MP: falta correr el SQL).", true);
+    }
     say(error ? `Error al guardar: ${error.message}` : `Configuración guardada. Rango ${newMin}–${newMax} (${totalNumbers(newMin, newMax)} números).`, !error);
     if (!error) load();
   };
@@ -503,6 +525,12 @@ export default function AdminPanel() {
                       {q.parts.length > 0 && (
                         <span className="block text-[11px] font-medium text-slate-400">{breakdownText(q.parts)}</span>
                       )}
+                      {mpPaid[g.key] === "approved" && (
+                        <span className="mt-0.5 block text-[11px] font-bold text-[#009ee3]">⚡ Pagado con MP</span>
+                      )}
+                      {mpPaid[g.key] === "review" && (
+                        <span className="mt-0.5 block text-[11px] font-bold text-amber-500">⚡ MP: revisar monto</span>
+                      )}
                       {first.prize_label && (
                         <span className="mt-0.5 block text-[11px] font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</span>
                       )}
@@ -580,6 +608,12 @@ export default function AdminPanel() {
                     </p>
                     {first.prize_label && (
                       <p className="mt-0.5 text-xs font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</p>
+                    )}
+                    {mpPaid[g.key] === "approved" && (
+                      <p className="mt-0.5 text-xs font-bold text-[#009ee3]">⚡ Pagado con MP</p>
+                    )}
+                    {mpPaid[g.key] === "review" && (
+                      <p className="mt-0.5 text-xs font-bold text-amber-500">⚡ MP: revisar monto</p>
                     )}
                   </div>
                   <a
@@ -729,6 +763,16 @@ export default function AdminPanel() {
                   className={`${inputCls} tnum mt-1`}
                 />
               </label>
+              <button
+                onClick={() => setSettings({ ...settings, mp_enabled: !settings.mp_enabled })}
+                aria-pressed={!!settings.mp_enabled}
+                className="flex h-[52px] items-center justify-between rounded-xl border border-slate-300 px-4 text-sm font-semibold transition dark:border-white/10 sm:mt-[22px] sm:h-12"
+              >
+                <span>Cobro con MercadoPago</span>
+                <span className={`rounded-lg px-2.5 py-1 text-xs font-bold ${settings.mp_enabled ? "bg-[#009ee3]/10 text-[#009ee3]" : "bg-slate-100 text-slate-500 dark:bg-night-700"}`}>
+                  {settings.mp_enabled ? "Activado" : "Apagado"}
+                </span>
+              </button>
               <label className="block text-sm font-medium">
                 Número mínimo
                 <input
