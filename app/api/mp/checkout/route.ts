@@ -51,6 +51,8 @@ export async function POST(req: Request) {
     const pref = new Preference(mpClient());
     const base = siteUrl();
     const back = (estado: string) => `${base}/pago?estado=${estado}&batch=${batchId}`;
+    // MP solo acepta auto_return si la URL de éxito es https (si no, muestra "Volver al sitio")
+    const useAutoReturn = /^https:\/\//i.test(base);
     const result = await pref.create({
       body: {
         items: [
@@ -66,7 +68,7 @@ export async function POST(req: Request) {
         external_reference: batchId,
         notification_url: `${base}/api/mp/webhook`,
         back_urls: { success: back("exito"), pending: back("pendiente"), failure: back("error") },
-        auto_return: "approved"
+        ...(useAutoReturn ? { auto_return: "approved" as const } : {})
       }
     });
     const prefId = String(result.id ?? "");
