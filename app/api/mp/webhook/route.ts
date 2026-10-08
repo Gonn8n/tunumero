@@ -44,26 +44,18 @@ async function handle(req: Request) {
     const expected = Number((pend as { amount?: number } | null)?.amount ?? NaN);
 
     if (status === "approved" && (!Number.isFinite(expected) || amount + 1 >= expected)) {
-      // Acredita el lote completo (pendientes del batch) + marca pago aprobado
-      const now = new Date().toISOString();
-      await supabase
-        .from("tickets")
-        .update({ status: "confirmado", confirmed_at: now, updated_at: now })
-        .eq("batch_id", batchId)
-        .eq("status", "pendiente");
-      if (pend) {
+      // Acredita el lote vía función segura (el webhook es anon y RLS bloquea UPDATE directo)
+      const { error: rpcError } = await supabase.rpc("mp_confirm_batch", {
+        p_batch: batchId,
+        p_payment_id: String(info.id ?? pid),
+        p_amount: amount
+      });
+      if (rpcError && pend) {
+        // Fallback: al menos deja constancia del pago aprobado para revisión manual
         await supabase
           .from("mp_payments")
-          .update({ status: "approved", mp_payment_id: String(info.id ?? pid) })
+          .update({ status: "review", mp_payment_id: String(info.id ?? pid) })
           .eq("id", (pend as { id: string }).id);
-      } else {
-        await supabase.from("mp_payments").insert({
-          batch_id: batchId,
-          mp_payment_id: String(info.id ?? pid),
-          status: "approved",
-          amount,
-          currency: String(info.currency_id ?? "ARS")
-        });
       }
     } else if (status === "approved") {
       // Monto menor al esperado: revisión manual, NO se confirma solo

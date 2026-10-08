@@ -50,6 +50,7 @@ export default function AdminPanel() {
   const [myName, setMyName] = useState("");
   const [promos, setPromos] = useState<Promo[]>([]);
   const [mpPaid, setMpPaid] = useState<Record<string, string>>({});
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [newPromo, setNewPromo] = useState({ name: "Promo 3", quantity: 3, price: 5000 });
   const router = useRouter();
 
@@ -495,10 +496,21 @@ export default function AdminPanel() {
                   <tr key={g.key} className="border-b border-slate-50 transition last:border-0 hover:bg-brand-50/50 dark:border-white/5 dark:hover:bg-night-800">
                     <td className="p-3">
                       <div className="flex max-w-[220px] flex-wrap gap-1">
-                        {g.numbers.map((n) => (
-                          <span key={n} className="tnum rounded-lg bg-brand-50 px-2 py-0.5 font-num text-sm font-extrabold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">{n}</span>
+                        {(expandedGroups[g.key] ? g.numbers : g.numbers.slice(0, 12)).map((n) => (
+                          <span key={n} title={g.tickets.some((t) => t.number === n && t.is_bonus) ? "Número de regalo" : `Número ${n}`}
+                            className={`tnum rounded-lg px-2 py-0.5 font-num text-sm font-extrabold ${
+                              g.tickets.some((t) => t.number === n && t.is_bonus)
+                                ? "border border-dashed border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                                : "bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+                            }`}>{n}</span>
                         ))}
                       </div>
+                      {g.numbers.length > 12 && (
+                        <button onClick={() => setExpandedGroups((p) => ({ ...p, [g.key]: !p[g.key] }))}
+                          className="mt-1 text-xs font-semibold text-brand-600 underline-offset-2 hover:underline dark:text-brand-300">
+                          {expandedGroups[g.key] ? "Ver menos" : `Ver los ${g.numbers.length} números`}
+                        </button>
+                      )}
                     </td>
                     <td className="p-3">
                       <p className="font-medium">{g.nombre} {g.apellido}</p>
@@ -530,6 +542,9 @@ export default function AdminPanel() {
                       )}
                       {mpPaid[g.key] === "review" && (
                         <span className="mt-0.5 block text-[11px] font-bold text-amber-500">⚡ MP: revisar monto</span>
+                      )}
+                      {!mpPaid[g.key] && (
+                        <span className="mt-0.5 block text-[11px] font-medium text-slate-400">💵 Transferencia</span>
                       )}
                       {first.prize_label && (
                         <span className="mt-0.5 block text-[11px] font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</span>
@@ -594,10 +609,21 @@ export default function AdminPanel() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap gap-1">
-                      {g.numbers.map((n) => (
-                        <span key={n} className="tnum rounded-lg bg-brand-50 px-2 py-0.5 font-num text-base font-extrabold text-brand-700 dark:bg-brand-500/10 dark:text-brand-300">{n}</span>
+                      {(expandedGroups[g.key] ? g.numbers : g.numbers.slice(0, 12)).map((n) => (
+                        <span key={n} title={g.tickets.some((t) => t.number === n && t.is_bonus) ? "Número de regalo" : `Número ${n}`}
+                          className={`tnum rounded-lg px-2 py-0.5 font-num text-base font-extrabold ${
+                            g.tickets.some((t) => t.number === n && t.is_bonus)
+                              ? "border border-dashed border-emerald-400 bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300"
+                              : "bg-brand-50 text-brand-700 dark:bg-brand-500/10 dark:text-brand-300"
+                          }`}>{n}</span>
                       ))}
                     </div>
+                    {g.numbers.length > 12 && (
+                      <button onClick={() => setExpandedGroups((p) => ({ ...p, [g.key]: !p[g.key] }))}
+                        className="mt-1 text-xs font-semibold text-brand-600 underline-offset-2 hover:underline dark:text-brand-300">
+                        {expandedGroups[g.key] ? "Ver menos" : `Ver los ${g.numbers.length} números`}
+                      </button>
+                    )}
                     <p className="mt-1.5 truncate font-semibold">{g.nombre} {g.apellido}</p>
                     {tab === "confirmado" && confName && (
                       <p className="mt-0.5 text-xs text-emerald-600 dark:text-emerald-400">Conf. por {confName}</p>
@@ -614,6 +640,9 @@ export default function AdminPanel() {
                     )}
                     {mpPaid[g.key] === "review" && (
                       <p className="mt-0.5 text-xs font-bold text-amber-500">⚡ MP: revisar monto</p>
+                    )}
+                    {!mpPaid[g.key] && (
+                      <p className="mt-0.5 text-xs font-medium text-slate-400">💵 Transferencia</p>
                     )}
                   </div>
                   <a

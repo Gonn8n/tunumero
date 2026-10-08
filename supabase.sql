@@ -402,3 +402,38 @@ create policy "mp payments api insert" on public.mp_payments
 drop policy if exists "mp payments api update" on public.mp_payments;
 create policy "mp payments api update" on public.mp_payments
   for update using (true) with check (amount > 0);
+-- Lectura anónima (la página /pago consulta el estado por batch_id imposible de adivinar;
+-- no se guarda email del pagador en filas públicas).
+drop policy if exists "mp payments api read" on public.mp_payments;
+create policy "mp payments api read" on public.mp_payments for select using (true);
+
+-- Confirmación por webhook: SOLO pendiente → confirmado del mismo lote.
+-- SECURITY DEFINER porque el webhook opera con anon key (RLS bloquea el UPDATE directo).
+-- La seguridad real está en que el webhook re-consulta el pago a la API de MP antes de llamar.
+create or replace function public.mp_confirm_batch(p_batch uuid, p_payment_id text, p_amount numeric)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  pendientes int;
+begin
+  if p_batch is null or p_amount is null or p_amount <= 0 then
+    return 'invalid';
+  end if;
+  select count(*) into pendientes from public.tickets
+    where batch_id = p_batch and status = 'pendiente';
+  if pendientes = 0 then
+    return 'nothing';
+  end if;
+  update public.tickets
+    set status = 'confirmado', confirmed_at = now(), updated_at = now()
+    where batch_id = p_batch and status = 'pendiente';
+  update public.mp_payments
+    set status = 'approved', mp_payment_id = p_payment_id
+    where batch_id = p_batch and status = 'pending';
+  if not found then
+    insert into public.mp_payments (batch_id, mp_payment_id, status, amount)
+      values (p_batch, p_payment_id, 'approved', p_amount);
+  end if;
+  return 'ok';
+end $$;
+
+grant execute on function public.mp_confirm_batch(uuid, text, numeric) to anon, authenticated;
