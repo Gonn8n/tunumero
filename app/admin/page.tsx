@@ -566,7 +566,7 @@ export default function AdminPanel() {
                         )}
                         {g.tickets.length > 1 && (
                         <div className="flex flex-wrap justify-end gap-1.5">
-                          {g.tickets.map((t) => (
+                          {(expandedGroups[g.key] ? g.tickets : g.tickets.slice(0, 3)).map((t) => (
                             <span key={t.id} className="tnum inline-flex items-center gap-1 rounded-xl border border-slate-200 py-1 pl-2.5 pr-1 text-xs font-bold dark:border-white/10">
                               {t.number}
                               {(tab === "pendiente") && (
@@ -583,6 +583,12 @@ export default function AdminPanel() {
                               )}
                             </span>
                           ))}
+                          {g.tickets.length > 3 && (
+                            <button onClick={() => setExpandedGroups((p) => ({ ...p, [g.key]: !p[g.key] }))}
+                              className="tnum flex h-[44px] items-center rounded-xl border border-dashed border-brand-300 px-2.5 text-xs font-bold text-brand-600 dark:text-brand-300">
+                              {expandedGroups[g.key] ? "−" : `+${g.tickets.length - 3}`}
+                            </button>
+                          )}
                         </div>
                         )}
                       </div>
@@ -672,7 +678,7 @@ export default function AdminPanel() {
                 )}
                 {g.tickets.length > 1 && (
                 <div className="mt-2 flex flex-wrap gap-1.5">
-                  {g.tickets.map((t) => (
+                  {(expandedGroups[g.key] ? g.tickets : g.tickets.slice(0, 3)).map((t) => (
                     <span key={t.id} className="tnum inline-flex items-center gap-1.5 rounded-xl border border-slate-200 py-1 pl-2 pr-1 text-xs font-bold dark:border-white/10">
                       {t.number}
                       {(tab === "pendiente") && (
@@ -683,6 +689,12 @@ export default function AdminPanel() {
                       )}
                     </span>
                   ))}
+                  {g.tickets.length > 3 && (
+                    <button onClick={() => setExpandedGroups((p) => ({ ...p, [g.key]: !p[g.key] }))}
+                      className="tnum flex h-[44px] items-center rounded-xl border border-dashed border-brand-300 px-2.5 text-xs font-bold text-brand-600 dark:text-brand-300">
+                      {expandedGroups[g.key] ? "−" : `+${g.tickets.length - 3}`}
+                    </button>
+                  )}
                 </div>
                 )}
               </article>
