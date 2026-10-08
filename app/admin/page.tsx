@@ -51,6 +51,7 @@ export default function AdminPanel() {
   const [promos, setPromos] = useState<Promo[]>([]);
   const [mpPaid, setMpPaid] = useState<Record<string, string>>({});
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [manageOpen, setManageOpen] = useState<Record<string, boolean>>({});
   const [newPromo, setNewPromo] = useState({ name: "Promo 3", quantity: 3, price: 5000 });
   const router = useRouter();
 
@@ -493,7 +494,7 @@ export default function AdminPanel() {
                   const first = g.tickets[0];
                   const confName = g.tickets.map((t) => t.confirmed_by && adminNames[t.confirmed_by]).find(Boolean);
                   return (
-                  <tr key={g.key} className="border-b border-slate-50 transition last:border-0 hover:bg-brand-50/50 dark:border-white/5 dark:hover:bg-night-800">
+                  <tr key={g.key} className="border-b border-slate-50 transition odd:bg-slate-50 last:border-0 hover:bg-brand-50/50 dark:border-white/5 dark:odd:bg-white/[0.03] dark:hover:bg-night-800">
                     <td className="p-3">
                       <div className="flex max-w-[220px] flex-wrap gap-1">
                         {(expandedGroups[g.key] ? g.numbers : g.numbers.slice(0, 12)).map((n) => (
@@ -537,18 +538,20 @@ export default function AdminPanel() {
                       {q.parts.length > 0 && (
                         <span className="block text-[11px] font-medium text-slate-400">{breakdownText(q.parts)}</span>
                       )}
-                      {mpPaid[g.key] === "approved" && (
-                        <span className="mt-0.5 block text-[11px] font-bold text-[#009ee3]">⚡ Pagado con MP</span>
-                      )}
-                      {mpPaid[g.key] === "review" && (
-                        <span className="mt-0.5 block text-[11px] font-bold text-amber-500">⚡ MP: revisar monto</span>
-                      )}
-                      {!mpPaid[g.key] && (
-                        <span className="mt-0.5 block text-[11px] font-medium text-slate-400">💵 Transferencia</span>
-                      )}
-                      {first.prize_label && (
-                        <span className="mt-0.5 block text-[11px] font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</span>
-                      )}
+                      <span className="mt-0.5 block text-[11px]">
+                        {mpPaid[g.key] === "approved" && (
+                          <span className="font-bold text-[#009ee3]">⚡ MP</span>
+                        )}
+                        {mpPaid[g.key] === "review" && (
+                          <span className="font-bold text-amber-500">⚡ revisar</span>
+                        )}
+                        {!mpPaid[g.key] && (
+                          <span className="font-medium text-slate-400">💵 Transf.</span>
+                        )}
+                        {first.prize_label && (
+                          <span className="ml-1.5 font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</span>
+                        )}
+                      </span>
                     </td>
                     <td className="p-3">
                       <div className="flex flex-col items-end gap-1.5">
@@ -565,9 +568,16 @@ export default function AdminPanel() {
                           </button>
                         )}
                         {g.tickets.length > 1 && (
-                        <div className="flex flex-wrap justify-end gap-1.5">
-                          {(expandedGroups[g.key] ? g.tickets : g.tickets.slice(0, 3)).map((t) => (
-                            <span key={t.id} className="tnum inline-flex items-center gap-1 rounded-xl border border-slate-200 py-1 pl-2.5 pr-1 text-xs font-bold dark:border-white/10">
+                        <>
+                        <button onClick={() => setManageOpen((p) => ({ ...p, [g.key]: !p[g.key] }))}
+                          aria-expanded={!!manageOpen[g.key]}
+                          className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-slate-200 px-3 text-sm font-semibold text-slate-500 transition hover:border-brand-300 active:scale-95 dark:border-white/10 dark:text-slate-400">
+                          {manageOpen[g.key] ? "Ocultar detalle" : `Detalle (${g.tickets.length})`}
+                        </button>
+                        {manageOpen[g.key] && (
+                        <div className="flex max-w-[240px] flex-wrap justify-end gap-1.5 rounded-xl bg-slate-50 p-2 dark:bg-white/5">
+                          {g.tickets.map((t) => (
+                            <span key={t.id} className="tnum inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white py-1 pl-2.5 pr-1 text-xs font-bold dark:border-white/10 dark:bg-night-800">
                               {t.number}
                               {(tab === "pendiente") && (
                                 <button onClick={() => act(t.id, "confirm")} aria-label={`Confirmar ${t.number}`} title={`Confirmar ${t.number}`}
@@ -583,13 +593,9 @@ export default function AdminPanel() {
                               )}
                             </span>
                           ))}
-                          {g.tickets.length > 3 && (
-                            <button onClick={() => setExpandedGroups((p) => ({ ...p, [g.key]: !p[g.key] }))}
-                              className="tnum flex h-[44px] items-center rounded-xl border border-dashed border-brand-300 px-2.5 text-xs font-bold text-brand-600 dark:text-brand-300">
-                              {expandedGroups[g.key] ? "−" : `+${g.tickets.length - 3}`}
-                            </button>
-                          )}
                         </div>
+                        )}
+                        </>
                         )}
                       </div>
                     </td>
@@ -611,7 +617,7 @@ export default function AdminPanel() {
               const first = g.tickets[0];
               const confName = g.tickets.map((t) => t.confirmed_by && adminNames[t.confirmed_by]).find(Boolean);
               return (
-              <article key={g.key} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-card dark:border-white/10 dark:bg-night-850">
+              <article key={g.key} className="rounded-2xl border border-brand-100 bg-white p-4 shadow-card odd:bg-slate-50 dark:border-white/10 dark:bg-night-850 dark:odd:bg-white/[0.03]">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap gap-1">
@@ -637,19 +643,19 @@ export default function AdminPanel() {
                     <p className="tnum mt-1 text-sm font-extrabold">
                       Total: {formatShort(q.total)}
                       {q.parts.length > 0 && <span className="ml-1 text-[11px] font-medium text-slate-400">{breakdownText(q.parts)}</span>}
+                      {mpPaid[g.key] === "approved" && (
+                        <span className="ml-1.5 text-[11px] font-bold text-[#009ee3]">⚡ MP</span>
+                      )}
+                      {mpPaid[g.key] === "review" && (
+                        <span className="ml-1.5 text-[11px] font-bold text-amber-500">⚡ revisar</span>
+                      )}
+                      {!mpPaid[g.key] && (
+                        <span className="ml-1.5 text-[11px] font-medium text-slate-400">💵 Transf.</span>
+                      )}
+                      {first.prize_label && (
+                        <span className="ml-1.5 text-[11px] font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</span>
+                      )}
                     </p>
-                    {first.prize_label && (
-                      <p className="mt-0.5 text-xs font-bold text-brand-600 dark:text-brand-300">🎁 {first.prize_label}</p>
-                    )}
-                    {mpPaid[g.key] === "approved" && (
-                      <p className="mt-0.5 text-xs font-bold text-[#009ee3]">⚡ Pagado con MP</p>
-                    )}
-                    {mpPaid[g.key] === "review" && (
-                      <p className="mt-0.5 text-xs font-bold text-amber-500">⚡ MP: revisar monto</p>
-                    )}
-                    {!mpPaid[g.key] && (
-                      <p className="mt-0.5 text-xs font-medium text-slate-400">💵 Transferencia</p>
-                    )}
                   </div>
                   <a
                     href={adminWhatsappLink({ number: g.numbers[0], nombre: g.nombre, apellido: g.apellido, telefono: first.telefono, status: first.status })}
@@ -677,9 +683,16 @@ export default function AdminPanel() {
                   </div>
                 )}
                 {g.tickets.length > 1 && (
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {(expandedGroups[g.key] ? g.tickets : g.tickets.slice(0, 3)).map((t) => (
-                    <span key={t.id} className="tnum inline-flex items-center gap-1.5 rounded-xl border border-slate-200 py-1 pl-2 pr-1 text-xs font-bold dark:border-white/10">
+                <>
+                <button onClick={() => setManageOpen((p) => ({ ...p, [g.key]: !p[g.key] }))}
+                  aria-expanded={!!manageOpen[g.key]}
+                  className="mt-2 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-500 transition active:scale-[.98] dark:border-white/10 dark:text-slate-400">
+                  {manageOpen[g.key] ? "Ocultar detalle" : `Detalle (${g.tickets.length})`}
+                </button>
+                {manageOpen[g.key] && (
+                <div className="mt-2 flex flex-wrap gap-1.5 rounded-xl bg-slate-50 p-2 dark:bg-white/5">
+                  {g.tickets.map((t) => (
+                    <span key={t.id} className="tnum inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white py-1 pl-2 pr-1 text-xs font-bold dark:border-white/10 dark:bg-night-800">
                       {t.number}
                       {(tab === "pendiente") && (
                         <button onClick={() => act(t.id, "confirm")} aria-label={`Confirmar ${t.number}`} title={`Confirmar ${t.number}`} className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-600 text-white transition active:scale-95"><CheckIcon className="h-4 w-4" /></button>
@@ -689,13 +702,9 @@ export default function AdminPanel() {
                       )}
                     </span>
                   ))}
-                  {g.tickets.length > 3 && (
-                    <button onClick={() => setExpandedGroups((p) => ({ ...p, [g.key]: !p[g.key] }))}
-                      className="tnum flex h-[44px] items-center rounded-xl border border-dashed border-brand-300 px-2.5 text-xs font-bold text-brand-600 dark:text-brand-300">
-                      {expandedGroups[g.key] ? "−" : `+${g.tickets.length - 3}`}
-                    </button>
-                  )}
                 </div>
+                )}
+                </>
                 )}
               </article>
               );
