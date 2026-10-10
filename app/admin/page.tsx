@@ -134,13 +134,33 @@ export default function AdminPanel() {
     load();
   };
 
-  const patchOne = async (id: string, action: "confirm" | "cancel", reason: string) => {
-    const res = await fetch("/api/tickets", {
+  const patchOne = async (id: string, action: "confirm" | "cancel", reason: string) => {    const res = await fetch("/api/tickets", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id, action, cancel_reason: reason })
     });
     return res.ok;
+  };
+
+  /** Reconcilia con MP: si hay pago aprobado para el lote, lo confirma (cubre webhooks perdidos) */
+  const reconcileMP = async (batchKey: string) => {
+    say("Consultando MercadoPago…");
+    try {
+      const res = await fetch("/api/mp/reconcile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ batch_id: batchKey })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        say(j.error ?? "Error al consultar MP.", false);
+        return;
+      }
+      say(j.ok ? `Pago #${j.payment_id} aprobado en MP. Pedido confirmado.` : (j.detail ?? "Sin pago aprobado."), !!j.ok);
+      load();
+    } catch {
+      say("No se pudo consultar MP.", false);
+    }
   };
 
   /** Confirma/cancela todo el pedido número por número (auditoría intacta por ticket) */
@@ -567,6 +587,12 @@ export default function AdminPanel() {
                             {g.tickets.length > 1 ? "Cancelar todo" : "Cancelar"}
                           </button>
                         )}
+                        {(tab === "pendiente") && mpPaid[g.key] !== "approved" && (
+                          <button onClick={() => reconcileMP(g.key)} title="Buscar el pago en MercadoPago y confirmar si está aprobado"
+                            className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#009ee3]/40 px-3 text-sm font-semibold text-[#009ee3] transition hover:bg-[#009ee3]/5 active:scale-95">
+                            ⚡ Verificar MP
+                          </button>
+                        )}
                         {g.tickets.length > 1 && (
                         <>
                         <button onClick={() => setManageOpen((p) => ({ ...p, [g.key]: !p[g.key] }))}
@@ -681,6 +707,12 @@ export default function AdminPanel() {
                       {g.tickets.length > 1 ? "Cancelar todo" : "Cancelar"}
                     </button>
                   </div>
+                )}
+                {(tab === "pendiente") && mpPaid[g.key] !== "approved" && (
+                  <button onClick={() => reconcileMP(g.key)}
+                    className="mt-2 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-[#009ee3]/40 text-sm font-semibold text-[#009ee3] transition active:scale-[.98]">
+                    ⚡ Verificar pago en MP
+                  </button>
                 )}
                 {g.tickets.length > 1 && (
                 <>

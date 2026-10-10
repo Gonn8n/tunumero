@@ -21,7 +21,10 @@ async function handle(req: Request) {
   const supabase = createServerSupabase();
   const pid = await paymentId(req);
   if (!pid) return NextResponse.json({ ok: true }); // ping de MP sin pago, se ignora
-  if (!process.env.MP_ACCESS_TOKEN) return NextResponse.json({ ok: true });
+  if (!process.env.MP_ACCESS_TOKEN) {
+    console.error("[mp-webhook] sin MP_ACCESS_TOKEN");
+    return NextResponse.json({ ok: true });
+  }
 
   try {
     // La verdad viene de la API de MP, nunca del body del webhook
@@ -30,7 +33,10 @@ async function handle(req: Request) {
     const status = String(info.status ?? "");
     const batchId = String(info.external_reference ?? "");
     const amount = Number(info.transaction_amount ?? 0);
-    if (!batchId) return NextResponse.json({ ok: true });
+    if (!batchId) {
+      console.error(`[mp-webhook] pago ${pid} sin external_reference`);
+      return NextResponse.json({ ok: true });
+    }
 
     // Registra/actualiza el pago
     const { data: pend } = await supabase
@@ -50,12 +56,15 @@ async function handle(req: Request) {
         p_payment_id: String(info.id ?? pid),
         p_amount: amount
       });
-      if (rpcError && pend) {
+      if (rpcError) {
+        console.error(`[mp-webhook] rpc mp_confirm_batch falló (batch ${batchId}, pago ${pid}): ${rpcError.message}`);
         // Fallback: al menos deja constancia del pago aprobado para revisión manual
-        await supabase
-          .from("mp_payments")
-          .update({ status: "review", mp_payment_id: String(info.id ?? pid) })
-          .eq("id", (pend as { id: string }).id);
+        if (pend) {
+          await supabase
+            .from("mp_payments")
+            .update({ status: "review", mp_payment_id: String(info.id ?? pid) })
+            .eq("id", (pend as { id: string }).id);
+        }
       }
     } else if (status === "approved") {
       // Monto menor al esperado: revisión manual, NO se confirma solo
@@ -73,8 +82,9 @@ async function handle(req: Request) {
           .eq("id", (pend as { id: string }).id);
       }
     }
-  } catch {
+  } catch (e) {
     // Se responde 200 igual para no encolar reintentos infinitos; el admin ve el pendiente
+    console.error(`[mp-webhook] error procesando pago ${pid}: ${e instanceof Error ? e.message : "desconocido"}`);
   }
   return NextResponse.json({ ok: true });
 }
