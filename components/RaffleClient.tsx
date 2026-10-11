@@ -560,7 +560,7 @@ export default function RaffleClient(props: Props) {
             <button onClick={openReserveFlow} disabled={!canReserve}
               className="flex h-12 flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-brand-600 text-[15px] font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-50">
               <CheckIcon className="h-5 w-5 shrink-0" />
-              Reservar
+              Comprar
             </button>
             <button onClick={() => setSelected([])} aria-label="Limpiar selección"
               className="h-12 shrink-0 rounded-xl border border-slate-300 px-4 text-sm font-semibold transition hover:bg-slate-50 dark:border-white/10 dark:hover:bg-night-800">
@@ -584,7 +584,7 @@ export default function RaffleClient(props: Props) {
           <div className="max-h-[92dvh] w-full min-w-0 max-w-md animate-pop-in overflow-y-auto rounded-t-3xl bg-white shadow-card dark:bg-night-850 sm:rounded-3xl">
             <div className="bg-gradient-to-r from-brand-700 to-brand-500 px-5 py-4 text-white sm:px-6 sm:py-5">
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium uppercase tracking-widest text-brand-100">Reservando {pack.open ? reserveLabel : pack.quantity > 1 ? pack.name : ""}</p>
+                <p className="text-sm font-medium uppercase tracking-widest text-brand-100">Comprando {pack.open ? reserveLabel : pack.quantity > 1 ? pack.name : ""}</p>
                 <button onClick={() => setShowModal(false)} aria-label="Cerrar" className="flex h-9 w-9 items-center justify-center rounded-full bg-white/15 transition hover:bg-white/25">
                   <XIcon className="h-4 w-4" />
                 </button>
@@ -630,7 +630,7 @@ export default function RaffleClient(props: Props) {
                 {error && <p role="alert" className="mt-3 text-sm font-medium text-rose-500">{error}</p>}
                 <button onClick={reserve} disabled={saving}
                   className="mt-4 h-12 w-full rounded-xl bg-brand-600 font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98] disabled:opacity-60">
-                  {saving ? "Reservando…" : `Reservar ${reserveLabel}`}
+                  {saving ? "Procesando…" : `Comprar ${reserveLabel}`}
                 </button>
               </div>
             ) : (
@@ -638,7 +638,7 @@ export default function RaffleClient(props: Props) {
                 <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300">
                   <CheckIcon className="h-7 w-7" />
                 </span>
-                <h3 className="mt-3 text-lg font-bold">¡Reserva registrada!</h3>
+                <h3 className="mt-3 text-lg font-bold">¡Compra registrada!</h3>
                 <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                   Quedó <b>pendiente de pago</b>. {mpEnabled ? "Pagá online o por transferencia." : "Aboná por transferencia."}
                 </p>

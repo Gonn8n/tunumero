@@ -14,6 +14,12 @@ function PagoInner() {
     if (!batch) return;
     let stop = false;
     let tries = 0;
+    // Al volver del pago, el sitio mismo confirma contra MP (por si el webhook tardó)
+    fetch("/api/mp/confirm-return", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ batch_id: batch })
+    }).catch(() => {});
     const poll = async () => {
       tries++;
       try {
