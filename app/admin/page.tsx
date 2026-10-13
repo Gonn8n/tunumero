@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabaseClient";
 import ThemeToggle from "@/components/ThemeToggle";
 import PhotoManager from "@/components/PhotoManager";
@@ -50,6 +51,7 @@ export default function AdminPanel() {
   const [myName, setMyName] = useState("");
   const [promos, setPromos] = useState<Promo[]>([]);
   const [mpPaid, setMpPaid] = useState<Record<string, string>>({});
+  const [mpResult, setMpResult] = useState<{ ok: boolean; title: string; body: string } | null>(null);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [manageOpen, setManageOpen] = useState<Record<string, boolean>>({});
   const [newPromo, setNewPromo] = useState({ name: "Promo 3", quantity: 3, price: 5000 });
@@ -153,13 +155,21 @@ export default function AdminPanel() {
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) {
-        say(j.error ?? "Error al consultar MP.", false);
+        const msg = j.error ?? "Error al consultar MP.";
+        say(msg, false);
+        setMpResult({ ok: false, title: "No se pudo verificar", body: msg });
         return;
       }
-      say(j.ok ? `Pago #${j.payment_id} aprobado en MP. Pedido confirmado.` : (j.detail ?? "Sin pago aprobado."), !!j.ok);
+      if (j.ok) {
+        setMpResult({ ok: true, title: "Pago confirmado", body: `Pago #${j.payment_id} aprobado en MP. Pedido confirmado.` });
+      } else {
+        setMpResult({ ok: false, title: "Sin pago aprobado", body: j.detail ?? "En MP: sin pagos. Todavía no hay pago aprobado." });
+      }
+      say(j.ok ? `Pedido confirmado (pago #${j.payment_id}).` : "Sin pago aprobado en MP.", !!j.ok);
       load();
     } catch {
       say("No se pudo consultar MP.", false);
+      setMpResult({ ok: false, title: "No se pudo verificar", body: "No se pudo consultar MP. Intentá de nuevo." });
     }
   };
 
@@ -565,6 +575,9 @@ export default function AdminPanel() {
                         {mpPaid[g.key] === "review" && (
                           <span className="font-bold text-amber-500">⚡ revisar</span>
                         )}
+                        {mpPaid[g.key] === "pending" && (
+                          <span className="font-bold text-slate-500 dark:text-slate-400">⏳ MP pendiente</span>
+                        )}
                         {!mpPaid[g.key] && (
                           <span className="font-medium text-slate-400">💵 Transf.</span>
                         )}
@@ -587,7 +600,7 @@ export default function AdminPanel() {
                             {g.tickets.length > 1 ? "Cancelar todo" : "Cancelar"}
                           </button>
                         )}
-                        {(tab === "pendiente") && mpPaid[g.key] !== "approved" && (
+                        {(tab === "pendiente") && (mpPaid[g.key] === "pending" || mpPaid[g.key] === "review") && (
                           <button onClick={() => reconcileMP(g.key)} title="Buscar el pago en MercadoPago y confirmar si está aprobado"
                             className="flex h-10 items-center gap-1.5 whitespace-nowrap rounded-xl border border-[#009ee3]/40 px-3 text-sm font-semibold text-[#009ee3] transition hover:bg-[#009ee3]/5 active:scale-95">
                             ⚡ Verificar MP
@@ -675,6 +688,9 @@ export default function AdminPanel() {
                       {mpPaid[g.key] === "review" && (
                         <span className="ml-1.5 text-[11px] font-bold text-amber-500">⚡ revisar</span>
                       )}
+                      {mpPaid[g.key] === "pending" && (
+                        <span className="ml-1.5 text-[11px] font-bold text-slate-500 dark:text-slate-400">⏳ MP pendiente</span>
+                      )}
                       {!mpPaid[g.key] && (
                         <span className="ml-1.5 text-[11px] font-medium text-slate-400">💵 Transf.</span>
                       )}
@@ -708,7 +724,7 @@ export default function AdminPanel() {
                     </button>
                   </div>
                 )}
-                {(tab === "pendiente") && mpPaid[g.key] !== "approved" && (
+                {(tab === "pendiente") && (mpPaid[g.key] === "pending" || mpPaid[g.key] === "review") && (
                   <button onClick={() => reconcileMP(g.key)}
                     className="mt-2 flex h-11 w-full items-center justify-center gap-1.5 rounded-xl border border-[#009ee3]/40 text-sm font-semibold text-[#009ee3] transition active:scale-[.98]">
                     ⚡ Verificar pago en MP
@@ -891,6 +907,24 @@ export default function AdminPanel() {
           </section>
         )}
       </main>
+
+      {/* Popup resultado de Verificar MP */}
+      {mpResult && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-night-950/70 p-4 backdrop-blur-sm" onClick={() => setMpResult(null)}>
+          <div className="w-full max-w-sm animate-pop-in rounded-3xl bg-white p-6 text-center shadow-card dark:bg-night-850" onClick={(e) => e.stopPropagation()}>
+            <span className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${mpResult.ok ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300"}`}>
+              {mpResult.ok ? <CheckIcon className="h-7 w-7" /> : <ClockIcon className="h-7 w-7" />}
+            </span>
+            <h3 className="mt-3 text-lg font-extrabold tracking-tight">{mpResult.title}</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{mpResult.body}</p>
+            <button onClick={() => setMpResult(null)}
+              className="mt-4 h-12 w-full rounded-xl bg-brand-600 font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98]">
+              Entendido
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
