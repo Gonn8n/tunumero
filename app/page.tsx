@@ -3,6 +3,7 @@ import RaffleClient from "@/components/RaffleClient";
 import PhotoGallery, { type GalleryPhoto } from "@/components/PhotoGallery";
 import ThemeToggle from "@/components/ThemeToggle";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import { totalNumbers, MIN_NUMBER, MAX_NUMBER, placeLabel, type Promo } from "@/lib/tickets";
 import { CalendarIcon, CashIcon, ShieldIcon, TicketIcon } from "@/components/icons";
 
@@ -32,7 +33,8 @@ const FALLBACK = {
   transfer_cbu: "0000003100000000000000",
   transfer_bank: "Mercado Pago",
   min_number: MIN_NUMBER,
-  max_number: MAX_NUMBER
+  max_number: MAX_NUMBER,
+  site_enabled: true
 };
 
 export default async function Home() {
@@ -40,12 +42,22 @@ export default async function Home() {
   let taken: number[] = [];
   let photos: GalleryPhoto[] = [];
   let promos: Promo[] = [];
+  let min0 = MIN_NUMBER;
+  let max0 = MAX_NUMBER;
   try {
     const supabase = createServerSupabase();
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
     if (s) settings = { ...FALLBACK, ...s };
-    const min0 = Number((s as { min_number?: number } | null)?.min_number ?? MIN_NUMBER);
-    const max0 = Number((s as { max_number?: number } | null)?.max_number ?? MAX_NUMBER);
+    min0 = Number((s as { min_number?: number } | null)?.min_number ?? MIN_NUMBER);
+    max0 = Number((s as { max_number?: number } | null)?.max_number ?? MAX_NUMBER);
+  } catch {
+    /* sin env/Supabase: usa fallback para poder ver el diseño */
+  }
+  // Sitio pausado por el superadmin: 404 antes de cargar números/fotos.
+  if (settings.site_enabled === false) notFound();
+
+  try {
+    const supabase = createServerSupabase();
     // Ocupados por chunks de 1000 (robusto aunque el rango crezca)
     const CHUNK = 1000;
     for (let from = 0; ; from += CHUNK) {

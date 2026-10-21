@@ -55,6 +55,10 @@ export async function POST(req: Request) {
   const prizeMinutes = Math.max(1, Math.min(180, Number(config?.prize_minutes ?? 20)));
 
   if (op === "spin") {
+    const { data: rs } = await supabase.from("raffle_settings").select("site_enabled").eq("id", 1).single();
+    if ((rs as { site_enabled?: boolean } | null)?.site_enabled === false) {
+      return NextResponse.json({ error: "Sitio no disponible" }, { status: 404 });
+    }
     if (!config || !wheelActiveNow(config)) {
       return NextResponse.json({ error: "La ruleta no está activa en este momento." }, { status: 403 });
     }

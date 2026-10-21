@@ -12,7 +12,7 @@ import Link from "next/link";
 import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, groupOrders, bestQuote, breakdownText, formatShort, placeLabel, type Ticket, type Promo, type OrderGroup } from "@/lib/tickets";
 import {
   CheckIcon, ChatIcon, ClockIcon, CogIcon, LogoutIcon, PlusIcon,
-  ShieldIcon, SparkIcon, TicketIcon, UsersIcon, XIcon
+  ShieldIcon, SparkIcon, TicketIcon, TrashIcon, UsersIcon, XIcon
 } from "@/components/icons";
 
 type Tab = "pendiente" | "confirmado" | "cancelado" | "historial" | "reservar" | "ruleta" | "config";
@@ -52,7 +52,14 @@ export default function AdminPanel() {
   const [myName, setMyName] = useState("");
   const [promos, setPromos] = useState<Promo[]>([]);
   const [mpPaid, setMpPaid] = useState<Record<string, string>>({});
-  const [mpResult, setMpResult] = useState<{ ok: boolean; title: string; body: string } | null>(null);
+  const [notice, setNotice] = useState<{ ok: boolean; title: string; body: string } | null>(null);
+  const [isSuper, setIsSuper] = useState(false);
+  const [siteEnabled, setSiteEnabled] = useState(true);
+  const [siteBusy, setSiteBusy] = useState(false);
+  const [siteConfirm, setSiteConfirm] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetText, setResetText] = useState("");
+  const [resetBusy, setResetBusy] = useState(false);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
   const [manageOpen, setManageOpen] = useState<Record<string, boolean>>({});
   const [newPromo, setNewPromo] = useState({ name: "Promo 3", quantity: 3, price: 5000 });
@@ -68,8 +75,9 @@ export default function AdminPanel() {
       return;
     }
     setUserEmail(user.email ?? "");
-    const { data: prof } = await supabase.from("admin_profiles").select("display_name").eq("user_id", user.id).single();
+    const { data: prof } = await supabase.from("admin_profiles").select("display_name,is_super").eq("user_id", user.id).single();
     if (prof?.display_name) setDisplayName(prof.display_name as string);
+    setIsSuper((prof as { is_super?: boolean } | null)?.is_super === true);
     setMyName((prof?.display_name as string) ?? "");
     setChecking(false);
     const { data: profs } = await supabase.from("admin_profiles").select("user_id,display_name");
@@ -97,6 +105,7 @@ export default function AdminPanel() {
       }
     } catch { /* tabla MP aún no creada: sin badges */ }
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
+    if (s) setSiteEnabled((s as { site_enabled?: boolean }).site_enabled !== false);
     if (s) setSettings({
       title: s.title ?? "", subtitle: s.subtitle ?? "", description: s.description ?? "",
       draw_date: s.draw_date ? s.draw_date.slice(0, 16) : "",
@@ -166,19 +175,19 @@ export default function AdminPanel() {
       if (!res.ok) {
         const msg = j.error ?? "Error al consultar MP.";
         say(msg, false);
-        setMpResult({ ok: false, title: "No se pudo verificar", body: msg });
+        setNotice({ ok: false, title: "No se pudo verificar", body: msg });
         return;
       }
       if (j.ok) {
-        setMpResult({ ok: true, title: "Pago confirmado", body: `Pago #${j.payment_id} aprobado en MP. Pedido confirmado.` });
+        setNotice({ ok: true, title: "Pago confirmado", body: `Pago #${j.payment_id} aprobado en MP. Pedido confirmado.` });
       } else {
-        setMpResult({ ok: false, title: "Sin pago aprobado", body: j.detail ?? "En MP: sin pagos. Todavía no hay pago aprobado." });
+        setNotice({ ok: false, title: "Sin pago aprobado", body: j.detail ?? "En MP: sin pagos. Todavía no hay pago aprobado." });
       }
       say(j.ok ? `Pedido confirmado (pago #${j.payment_id}).` : "Sin pago aprobado en MP.", !!j.ok);
       load();
     } catch {
       say("No se pudo consultar MP.", false);
-      setMpResult({ ok: false, title: "No se pudo verificar", body: "No se pudo consultar MP. Intentá de nuevo." });
+      setNotice({ ok: false, title: "No se pudo verificar", body: "No se pudo consultar MP. Intentá de nuevo." });
     }
   };
 
@@ -274,7 +283,50 @@ export default function AdminPanel() {
   const removePrize = (index: number) =>
     setSettings((s) => (s.prizes.length <= 1 ? s : { ...s, prizes: s.prizes.filter((_, i) => i !== index) }));
 
-  const saveMyName = async () => {    const name = myName.trim();
+  const toggleSite = async (enabled: boolean) => {
+    setSiteBusy(true);
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("set_site_enabled", { p_enabled: enabled });
+    setSiteBusy(false);
+    setSiteConfirm(false);
+    if (error) {
+      setNotice({ ok: false, title: "No se pudo cambiar el sitio", body: error.message });
+      return;
+    }
+    const next = data === true;
+    setSiteEnabled(next);
+    setNotice({
+      ok: next,
+      title: next ? "Sitio activado" : "Sitio pausado",
+      body: next
+        ? "La web vuelve a estar disponible para los clientes."
+        : "La home responde 404 y no se aceptan reservas nuevas. El panel admin sigue disponible."
+    });
+  };
+
+  const resetRaffle = async () => {
+    if (resetText.trim().toUpperCase() !== "REINICIAR") return;
+    setResetBusy(true);
+    const supabase = createClient();
+    const { data, error } = await supabase.rpc("reset_raffle");
+    setResetBusy(false);
+    if (error) {
+      setNotice({ ok: false, title: "No se pudo reiniciar", body: error.message });
+      return;
+    }
+    const r = (data ?? {}) as { tickets?: number; history?: number; spins?: number; payments?: number };
+    setResetOpen(false);
+    setResetText("");
+    setNotice({
+      ok: true,
+      title: "Sorteo reiniciado",
+      body: `Se liberaron ${r.tickets ?? 0} números y se borraron ${r.history ?? 0} movimientos, ${r.payments ?? 0} pagos y ${r.spins ?? 0} giros de ruleta.`
+    });
+    load();
+  };
+
+  const saveMyName = async () => {
+    const name = myName.trim();
     if (!name) { say("Escribí tu nombre visible.", false); return; }
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -368,7 +420,14 @@ export default function AdminPanel() {
             </Link>
             <div className="min-w-0">
               <h1 className="text-lg font-extrabold leading-tight tracking-tight">Panel Admin</h1>
-              <p className="tnum max-w-[140px] truncate text-xs text-brand-100 sm:max-w-[220px]">{displayName || userEmail}</p>
+              <p className="flex items-center gap-1.5 text-xs text-brand-100">
+                <span className="tnum max-w-[140px] truncate sm:max-w-[220px]">{displayName || userEmail}</span>
+                {isSuper && (
+                  <span className="rounded-full bg-gold-400/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-gold-300">
+                    Superadmin
+                  </span>
+                )}
+              </p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -850,7 +909,35 @@ export default function AdminPanel() {
               </button>
             </div>
             <div className="mb-5 mt-6 border-t border-slate-100 pt-5 dark:border-white/5" />
-            <h2 className="flex items-center gap-2 font-bold">
+            <div className="rounded-2xl border border-slate-200 p-4 dark:border-white/10">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="flex items-center gap-2 font-bold">
+                    <ShieldIcon className="h-5 w-5 text-brand-600 dark:text-brand-300" />
+                    Sitio público
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    {siteEnabled
+                      ? "La web está activa y recibe reservas."
+                      : "La web está pausada: la home responde 404 y no se aceptan reservas nuevas."}
+                  </p>
+                </div>
+                <span className={`rounded-lg px-2.5 py-1 text-xs font-bold ${siteEnabled ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"}`}>
+                  {siteEnabled ? "Activo" : "Pausado"}
+                </span>
+              </div>
+              {isSuper ? (
+                <button onClick={() => setSiteConfirm(true)} disabled={siteBusy}
+                  className="mt-3 h-11 rounded-xl border border-slate-300 px-4 text-sm font-bold transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5">
+                  {siteBusy ? "Guardando…" : siteEnabled ? "Pausar sitio" : "Activar sitio"}
+                </button>
+              ) : (
+                <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
+                  Solo el superadmin puede activar o pausar el sitio.
+                </p>
+              )}
+            </div>
+            <h2 className="mt-6 flex items-center gap-2 font-bold">
               <CogIcon className="h-5 w-5 text-brand-600 dark:text-brand-300" />
               Info del sorteo y cobro
             </h2>
@@ -967,20 +1054,100 @@ export default function AdminPanel() {
             </button>
             <PromoManager promos={promos} newPromo={newPromo} setNewPromo={setNewPromo} reload={load} say={say} />
             <PhotoManager onMessage={say} />
+
+            {isSuper && (
+              <div className="mt-6 rounded-2xl border border-rose-200 bg-rose-50/60 p-4 dark:border-rose-500/20 dark:bg-rose-500/5">
+                <h2 className="flex items-center gap-2 text-sm font-bold text-rose-700 dark:text-rose-300">
+                  <TrashIcon className="h-4 w-4" />
+                  Zona de peligro
+                </h2>
+                <p className="mt-1 text-xs leading-relaxed text-rose-700/80 dark:text-rose-300/80">
+                  Reinicia el sorteo liberando todos los números y borrando clientes, reservas, historial, pagos de MP y giros de la ruleta. Se conservan la configuración, los premios, las promos y las fotos.
+                </p>
+                <button onClick={() => { setResetText(""); setResetOpen(true); }}
+                  className="mt-3 h-11 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white shadow-card transition hover:bg-rose-700 active:scale-[.98]">
+                  Reiniciar sorteo
+                </button>
+              </div>
+            )}
           </section>
         )}
       </main>
 
-      {/* Popup resultado de Verificar MP */}
-      {mpResult && typeof document !== "undefined" && createPortal(
-        <div className="fixed inset-0 z-[100] grid place-items-center bg-night-950/70 p-4 backdrop-blur-sm" onClick={() => setMpResult(null)}>
-          <div className="w-full max-w-sm animate-pop-in rounded-3xl bg-white p-6 text-center shadow-card dark:bg-night-850" onClick={(e) => e.stopPropagation()}>
-            <span className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${mpResult.ok ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300"}`}>
-              {mpResult.ok ? <CheckIcon className="h-7 w-7" /> : <ClockIcon className="h-7 w-7" />}
+      {/* Confirmar pausa/activación del sitio */}
+      {siteConfirm && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-night-950/70 p-4 backdrop-blur-sm"
+          onClick={() => { if (!siteBusy) setSiteConfirm(false); }}>
+          <div className="w-full max-w-sm animate-pop-in rounded-3xl bg-white p-6 shadow-card dark:bg-night-850" onClick={(e) => e.stopPropagation()}>
+            <span className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${siteEnabled ? "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300"}`}>
+              <ShieldIcon className="h-7 w-7" />
             </span>
-            <h3 className="mt-3 text-lg font-extrabold tracking-tight">{mpResult.title}</h3>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{mpResult.body}</p>
-            <button onClick={() => setMpResult(null)}
+            <h3 className="mt-3 text-center text-lg font-extrabold tracking-tight">
+              {siteEnabled ? "¿Pausar el sitio?" : "¿Activar el sitio?"}
+            </h3>
+            <p className="mt-1 text-center text-sm text-slate-500 dark:text-slate-400">
+              {siteEnabled
+                ? "La home va a responder 404 y no se van a aceptar reservas nuevas. Los pagos ya iniciados en MercadoPago se pueden seguir acreditando."
+                : "La web vuelve a estar disponible para los clientes y se reabren las reservas."}
+            </p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button onClick={() => setSiteConfirm(false)} disabled={siteBusy}
+                className="h-12 rounded-xl border border-slate-300 text-sm font-semibold transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5">
+                Cancelar
+              </button>
+              <button onClick={() => toggleSite(!siteEnabled)} disabled={siteBusy}
+                className={`h-12 rounded-xl text-sm font-bold text-white transition active:scale-[.98] disabled:opacity-60 ${siteEnabled ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>
+                {siteBusy ? "Guardando…" : siteEnabled ? "Sí, pausar" : "Sí, activar"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Confirmar reinicio total del sorteo */}
+      {resetOpen && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-night-950/70 p-4 backdrop-blur-sm"
+          onClick={() => { if (!resetBusy) setResetOpen(false); }}>
+          <div className="w-full max-w-md animate-pop-in rounded-3xl bg-white p-6 shadow-card dark:bg-night-850" onClick={(e) => e.stopPropagation()}>
+            <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300">
+              <TrashIcon className="h-7 w-7" />
+            </span>
+            <h3 className="mt-3 text-center text-lg font-extrabold tracking-tight">Reiniciar sorteo</h3>
+            <p className="mt-1 text-center text-sm text-slate-500 dark:text-slate-400">
+              Se borran todos los clientes, números, historial, pagos de MP y giros de ruleta. No se puede deshacer.
+            </p>
+            <label className="mt-4 block text-xs font-semibold text-slate-500 dark:text-slate-400">
+              Escribí <span className="font-num font-bold text-rose-600 dark:text-rose-300">REINICIAR</span> para confirmar
+              <input value={resetText} onChange={(e) => setResetText(e.target.value)} autoFocus
+                placeholder="REINICIAR" aria-label="Confirmar reinicio"
+                className={`${inputCls} mt-1 text-center font-num uppercase tracking-widest`} />
+            </label>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button onClick={() => setResetOpen(false)} disabled={resetBusy}
+                className="h-12 rounded-xl border border-slate-300 text-sm font-semibold transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5">
+                Cancelar
+              </button>
+              <button onClick={resetRaffle} disabled={resetBusy || resetText.trim().toUpperCase() !== "REINICIAR"}
+                className="h-12 rounded-xl bg-rose-600 text-sm font-bold text-white transition hover:bg-rose-700 active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-40">
+                {resetBusy ? "Reiniciando…" : "Reiniciar"}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* Popup de resultado (Verificar MP, pausa, reinicio) */}
+      {notice && typeof document !== "undefined" && createPortal(
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-night-950/70 p-4 backdrop-blur-sm" onClick={() => setNotice(null)}>
+          <div className="w-full max-w-sm animate-pop-in rounded-3xl bg-white p-6 text-center shadow-card dark:bg-night-850" onClick={(e) => e.stopPropagation()}>
+            <span className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${notice.ok ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-amber-100 text-amber-600 dark:bg-amber-500/15 dark:text-amber-300"}`}>
+              {notice.ok ? <CheckIcon className="h-7 w-7" /> : <ClockIcon className="h-7 w-7" />}
+            </span>
+            <h3 className="mt-3 text-lg font-extrabold tracking-tight">{notice.title}</h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">{notice.body}</p>
+            <button onClick={() => setNotice(null)}
               className="mt-4 h-12 w-full rounded-xl bg-brand-600 font-semibold text-white shadow-glow transition hover:bg-brand-700 active:scale-[.98]">
               Entendido
             </button>

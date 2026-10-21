@@ -15,11 +15,15 @@ create table if not exists public.raffle_settings (
   transfer_bank text default 'Mercado Pago',
   min_number int not null default 0,
   max_number int not null default 4999,
+  site_enabled boolean not null default true,
   updated_at timestamptz default now(),
   updated_by uuid,
   constraint single_row check (id = 1),
   constraint settings_range_valid check (min_number >= 0 and max_number <= 99999 and min_number <= max_number)
 );
+
+-- Pausa comercial: la home responde 404 y se bloquean reservas nuevas (RLS).
+alter table public.raffle_settings add column if not exists site_enabled boolean not null default true;
 
 create table if not exists public.tickets (
   id uuid primary key default gen_random_uuid(),
@@ -49,8 +53,12 @@ create index if not exists tickets_dni_idx on public.tickets (dni);
 create table if not exists public.admin_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null,
+  is_super boolean not null default false,
   created_at timestamptz default now()
 );
+
+-- Superadmin: puede pausar el sitio y reiniciar el sorteo.
+alter table public.admin_profiles add column if not exists is_super boolean not null default false;
 
 alter table public.raffle_settings enable row level security;
 alter table public.tickets enable row level security;
@@ -66,6 +74,7 @@ drop policy if exists "tickets public insert pendiente" on public.tickets;
 create policy "tickets public insert pendiente" on public.tickets
   for insert with check (
     status = 'pendiente' and source = 'web'
+    and coalesce((select site_enabled from public.raffle_settings where id = 1), true)
     and number >= (select min_number from public.raffle_settings where id = 1)
     and number <= (select max_number from public.raffle_settings where id = 1)
   );
@@ -88,6 +97,28 @@ create policy "profiles self insert" on public.admin_profiles
 drop policy if exists "profiles self update" on public.admin_profiles;
 create policy "profiles self update" on public.admin_profiles
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- El flag is_super NO se puede cambiar desde la app (solo SQL Editor / service role).
+create or replace function public.protect_super_flag()
+returns trigger language plpgsql as $$
+begin
+  if auth.uid() is not null then
+    if tg_op = 'INSERT' and new.is_super then
+      raise exception 'El flag is_super solo se modifica desde el SQL Editor'
+        using errcode = '42501';
+    end if;
+    if tg_op = 'UPDATE' and new.is_super is distinct from old.is_super then
+      raise exception 'El flag is_super solo se modifica desde el SQL Editor'
+        using errcode = '42501';
+    end if;
+  end if;
+  return new;
+end $$;
+
+drop trigger if exists trg_protect_super on public.admin_profiles;
+create trigger trg_protect_super
+  before insert or update on public.admin_profiles
+  for each row execute function public.protect_super_flag();
 
 insert into public.raffle_settings (id) values (1)
   on conflict (id) do nothing;
@@ -330,7 +361,10 @@ drop policy if exists "wheel spins public read" on public.wheel_spins;
 create policy "wheel spins public read" on public.wheel_spins for select using (true);
 drop policy if exists "wheel spins anon insert" on public.wheel_spins;
 create policy "wheel spins anon insert" on public.wheel_spins
-  for insert with check (expires_at > now() and expires_at <= now() + interval '2 hours');
+  for insert with check (
+    expires_at > now() and expires_at <= now() + interval '2 hours'
+    and coalesce((select site_enabled from public.raffle_settings where id = 1), true)
+  );
 drop policy if exists "wheel spins mark used" on public.wheel_spins;
 create policy "wheel spins mark used" on public.wheel_spins
   for update using (used_at is null) with check (used_at is not null);
@@ -449,3 +483,75 @@ update public.raffle_settings
 set prizes = '[{"label":"MOTO HONDA WAVE 2026"},{"label":"MOTO GILERA 110 2021"},{"label":"BICI RODADO 29"}]'::jsonb,
     subtitle = case when subtitle ilike '1er premio%' then null else subtitle end
 where id = 1 and (prizes is null or prizes = '[]'::jsonb);
+
+-- ============ SUPERADMIN + PAUSA DEL SITIO + REINICIO ============
+
+-- ¿El usuario logueado es superadmin?
+create or replace function public.admin_is_super()
+returns boolean language sql stable security definer set search_path = public as $$
+  select coalesce((select is_super from public.admin_profiles where user_id = auth.uid()), false);
+$$;
+revoke all on function public.admin_is_super() from public;
+grant execute on function public.admin_is_super() to authenticated;
+
+-- Activar/pausar la web (solo superadmin). Con site_enabled=false:
+-- la home responde 404 y las policies bloquean reservas y giros nuevos.
+create or replace function public.set_site_enabled(p_enabled boolean)
+returns boolean language plpgsql security definer set search_path = public as $$
+declare
+  v_enabled boolean := coalesce(p_enabled, true);
+begin
+  if not public.admin_is_super() then
+    raise exception 'Solo el superadmin puede activar o pausar el sitio'
+      using errcode = '42501';
+  end if;
+  update public.raffle_settings
+    set site_enabled = v_enabled, updated_at = now(), updated_by = auth.uid()
+    where id = 1;
+  return v_enabled;
+end $$;
+revoke all on function public.set_site_enabled(boolean) from public;
+grant execute on function public.set_site_enabled(boolean) to authenticated;
+
+-- Reinicio del sorteo (solo superadmin): borra clientes/reservas y datos
+-- transaccionales. Conserva configuración, premios, promos, fotos y ruleta.
+create or replace function public.reset_raffle()
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  c_tickets int;
+  c_history int;
+  c_spins int;
+  c_payments int;
+begin
+  if not public.admin_is_super() then
+    raise exception 'Solo el superadmin puede reiniciar el sorteo'
+      using errcode = '42501';
+  end if;
+  select count(*) into c_tickets from public.tickets;
+  select count(*) into c_history from public.ticket_history;
+  select count(*) into c_spins from public.wheel_spins;
+  select count(*) into c_payments from public.mp_payments;
+  delete from public.ticket_history;
+  delete from public.wheel_spins;
+  delete from public.mp_payments;
+  delete from public.tickets;
+  return jsonb_build_object(
+    'tickets', c_tickets,
+    'history', c_history,
+    'spins', c_spins,
+    'payments', c_payments
+  );
+end $$;
+revoke all on function public.reset_raffle() from public;
+grant execute on function public.reset_raffle() to authenticated;
+
+-- Superadmin del proyecto: anexaria@gmail.com
+-- Si el mail no existe en auth.users no inserta nada. No pisa el display_name
+-- si la fila ya existe. Re-ejecutable.
+insert into public.admin_profiles (user_id, display_name, is_super)
+select id,
+       coalesce(nullif(raw_user_meta_data->>'display_name', ''), split_part(email, '@', 1)),
+       true
+from auth.users
+where lower(email) = 'anexaria@gmail.com'
+on conflict (user_id) do update set is_super = true;
