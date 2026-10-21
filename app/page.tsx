@@ -3,15 +3,26 @@ import RaffleClient from "@/components/RaffleClient";
 import PhotoGallery, { type GalleryPhoto } from "@/components/PhotoGallery";
 import ThemeToggle from "@/components/ThemeToggle";
 import Link from "next/link";
-import { totalNumbers, MIN_NUMBER, MAX_NUMBER, type Promo } from "@/lib/tickets";
+import { totalNumbers, MIN_NUMBER, MAX_NUMBER, placeLabel, type Promo } from "@/lib/tickets";
 import { CalendarIcon, CashIcon, ShieldIcon, TicketIcon } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
+
+const PODIUM = [
+  { box: "border-gold-400/60 bg-gold-400/10", badge: "bg-gold-400 text-night-950" },
+  { box: "border-slate-300/80 bg-slate-100 dark:border-white/15 dark:bg-white/5", badge: "bg-slate-300 text-night-900" },
+  { box: "border-amber-600/40 bg-amber-600/10", badge: "bg-amber-700 text-white" }
+];
+const PODIUM_FALLBACK = {
+  box: "border-brand-200 bg-brand-50 dark:border-white/10 dark:bg-white/5",
+  badge: "bg-brand-600 text-white"
+};
 
 const FALLBACK = {
   title: "Gran Sorteo Tunumero",
   subtitle: "Moto 0km + $500.000 en efectivo",
   description: "Buscá tu número favorito y reservalo en segundos.",
+  prizes: [] as { label: string }[],
   draw_date: null as string | null,
   ticket_price: 2000,
   currency: "ARS",
@@ -76,6 +87,11 @@ export default async function Home() {
   const inRange = new Set(taken.filter((n) => n >= min && n <= max));
   const disponibles = total - inRange.size;
   const price = `$${Number(settings.ticket_price).toLocaleString("es-AR")}`;
+  const rawPrizes = (settings as { prizes?: unknown }).prizes;
+  const prizes = (Array.isArray(rawPrizes) ? rawPrizes : [])
+    .map((p) => (p && typeof p === "object" ? String((p as { label?: unknown }).label ?? "").trim() : ""))
+    .filter(Boolean)
+    .map((label) => ({ label }));
 
   return (
     <div className="min-h-dvh">
@@ -129,7 +145,27 @@ export default async function Home() {
                 <h1 className="mt-2 text-2xl font-extrabold leading-tight tracking-tight sm:text-3xl">
                   {settings.title}
                 </h1>
-                <p className="mt-1 text-lg font-semibold text-brand-700 dark:text-brand-300">{settings.subtitle}</p>
+                {settings.subtitle && (
+                  <p className="mt-1 text-lg font-semibold text-brand-700 dark:text-brand-300">{settings.subtitle}</p>
+                )}
+                {prizes.length > 0 && (
+                  <ul className="mt-3 grid gap-2 sm:grid-cols-3">
+                    {prizes.map((p, i) => {
+                      const tone = PODIUM[i] ?? PODIUM_FALLBACK;
+                      return (
+                        <li key={`${i}-${p.label}`} className={`flex items-center gap-2.5 rounded-2xl border p-2.5 sm:flex-col sm:justify-center sm:gap-1 sm:p-3 sm:text-center ${tone.box}`}>
+                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-sm font-extrabold ${tone.badge}`}>
+                            {i + 1}°
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-[10px] font-bold uppercase tracking-[0.16em] opacity-70">{placeLabel(i)} premio</span>
+                            <span className="block break-words text-sm font-bold leading-tight">{p.label}</span>
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
                 <p className="mt-2 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{settings.description}</p>
                 <div className="mt-4 flex flex-wrap gap-2 text-sm">
                   <span className="inline-flex items-center gap-1.5 rounded-full bg-brand-50 px-3 py-1.5 font-medium text-brand-800 dark:bg-brand-500/10 dark:text-brand-200">

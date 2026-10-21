@@ -85,6 +85,7 @@ export interface RaffleSettings {
   title: string;
   subtitle: string | null;
   description: string | null;
+  prizes: { label: string }[] | null;
   prize_image_url: string | null;
   draw_date: string | null;
   ticket_price: number;
@@ -394,9 +395,14 @@ export function pickFreeNumbers(
   return out.sort((a, b) => a - b);
 }
 
+/** Rótulo del puesto: 1er, 2do, 3er, 4to, 5to… */
+export function placeLabel(index: number): string {
+  const places = ["1er", "2do", "3er", "4to", "5to", "6to", "7mo", "8vo", "9no", "10mo"];
+  return places[index] ?? `${index + 1}°`;
+}
+
 /** Texto corto del premio para UI/WhatsApp */
-export function prizeShort(p: { kind: WheelKind; value: number; label: string }): string {
-  if (p.kind === "discount") return `${Number(p.value)}% OFF`;
+export function prizeShort(p: { kind: WheelKind; value: number; label: string }): string {  if (p.kind === "discount") return `${Number(p.value)}% OFF`;
   if (p.kind === "bonus") return `+${Number(p.value)} de regalo`;
   return `x${Number(p.value)} tu pack`;
 }

@@ -437,3 +437,15 @@ begin
 end $$;
 
 grant execute on function public.mp_confirm_batch(uuid, text, numeric) to anon, authenticated;
+
+-- ============ PREMIOS DEL SORTEO (podio del hero) ============
+
+-- Lista ordenada de premios: [{"label":"MOTO HONDA WAVE 2026"}, ...]
+alter table public.raffle_settings add column if not exists prizes jsonb not null default '[]'::jsonb;
+
+-- Seed: deja cargados los 3 premios si la lista está vacía y limpia el subtítulo
+-- que tenía el texto pegado como una sola línea.
+update public.raffle_settings
+set prizes = '[{"label":"MOTO HONDA WAVE 2026"},{"label":"MOTO GILERA 110 2021"},{"label":"BICI RODADO 29"}]'::jsonb,
+    subtitle = case when subtitle ilike '1er premio%' then null else subtitle end
+where id = 1 and (prizes is null or prizes = '[]'::jsonb);

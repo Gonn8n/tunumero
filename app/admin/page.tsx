@@ -9,7 +9,7 @@ import WheelManager from "@/components/WheelManager";
 import DownloadExcel from "@/components/DownloadExcel";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, groupOrders, bestQuote, breakdownText, formatShort, type Ticket, type Promo, type OrderGroup } from "@/lib/tickets";
+import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, groupOrders, bestQuote, breakdownText, formatShort, placeLabel, type Ticket, type Promo, type OrderGroup } from "@/lib/tickets";
 import {
   CheckIcon, ChatIcon, ClockIcon, CogIcon, LogoutIcon, PlusIcon,
   ShieldIcon, SparkIcon, TicketIcon, UsersIcon, XIcon
@@ -39,7 +39,8 @@ export default function AdminPanel() {
     title: "", subtitle: "", description: "", draw_date: "",
     ticket_price: 2000, whatsapp_number: "", alias: "",
     transfer_holder: "", transfer_cbu: "", transfer_bank: "",
-    min_number: 0, max_number: 4999, mp_enabled: true
+    min_number: 0, max_number: 4999, mp_enabled: true,
+    prizes: [{ label: "" }, { label: "" }, { label: "" }] as { label: string }[]
   });
   const [manual, setManual] = useState({ number: "", nombre: "", apellido: "", dni: "", telefono: "" });
   const [msg, setMsg] = useState("");
@@ -103,7 +104,15 @@ export default function AdminPanel() {
       alias: s.alias ?? "", transfer_holder: s.transfer_holder ?? "",
       transfer_cbu: s.transfer_cbu ?? "", transfer_bank: s.transfer_bank ?? "",
       min_number: s.min_number ?? 0, max_number: s.max_number ?? 4999,
-      mp_enabled: (s as { mp_enabled?: boolean }).mp_enabled !== false
+      mp_enabled: (s as { mp_enabled?: boolean }).mp_enabled !== false,
+      prizes: (() => {
+        const raw = (s as { prizes?: unknown }).prizes;
+        const list = Array.isArray(raw)
+          ? raw.map((p) => ({ label: p && typeof p === "object" ? String((p as { label?: unknown }).label ?? "").trim() : "" }))
+          : [];
+        while (list.length < 3) list.push({ label: "" });
+        return list;
+      })()
     });
   };
 
@@ -230,24 +239,42 @@ export default function AdminPanel() {
       alias: settings.alias, transfer_holder: settings.transfer_holder,
       transfer_cbu: settings.transfer_cbu, transfer_bank: settings.transfer_bank,
       min_number: newMin, max_number: newMax,
+      prizes: settings.prizes.map((p) => p.label.trim()).filter(Boolean).map((label) => ({ label })),
       mp_enabled: !!settings.mp_enabled,
       updated_at: new Date().toISOString(), updated_by: user?.id ?? null
     };
-    let { error } = await supabase.from("raffle_settings").update(payload).eq("id", 1);
+    const update = (data: Record<string, unknown>) =>
+      supabase.from("raffle_settings").update(data).eq("id", 1);
+    let { error } = await update(payload);
+    const missing: string[] = [];
+    if (error && /prizes/i.test(error.message)) {
+      // SQL de premios aún no corrido: guarda todo lo demás igual
+      delete (payload as { prizes?: unknown }).prizes;
+      missing.push("premios");
+      error = (await update(payload)).error;
+    }
     if (error && /mp_enabled/i.test(error.message)) {
       // SQL de MP aún no corrido: guarda todo lo demás igual
-      const legacy = { ...payload };
-      delete (legacy as { mp_enabled?: boolean }).mp_enabled;
-      const retry = await supabase.from("raffle_settings").update(legacy).eq("id", 1);
-      error = retry.error;
-      if (!error) say("Configuración guardada (sin interruptor MP: falta correr el SQL).", true);
+      delete (payload as { mp_enabled?: boolean }).mp_enabled;
+      missing.push("interruptor MP");
+      error = (await update(payload)).error;
     }
-    say(error ? `Error al guardar: ${error.message}` : `Configuración guardada. Rango ${newMin}–${newMax} (${totalNumbers(newMin, newMax)} números).`, !error);
+    say(error
+      ? `Error al guardar: ${error.message}`
+      : missing.length
+        ? `Configuración guardada (sin ${missing.join(" ni ")}: falta correr el SQL).`
+        : `Configuración guardada. Rango ${newMin}–${newMax} (${totalNumbers(newMin, newMax)} números).`,
+      !error);
     if (!error) load();
   };
 
-  const saveMyName = async () => {
-    const name = myName.trim();
+  const setPrize = (index: number, label: string) =>
+    setSettings((s) => ({ ...s, prizes: s.prizes.map((p, i) => (i === index ? { label } : p)) }));
+  const addPrize = () => setSettings((s) => ({ ...s, prizes: [...s.prizes, { label: "" }] }));
+  const removePrize = (index: number) =>
+    setSettings((s) => (s.prizes.length <= 1 ? s : { ...s, prizes: s.prizes.filter((_, i) => i !== index) }));
+
+  const saveMyName = async () => {    const name = myName.trim();
     if (!name) { say("Escribí tu nombre visible.", false); return; }
     const supabase = createClient();
     const { data: { user } } = await supabase.auth.getUser();
@@ -315,7 +342,7 @@ export default function AdminPanel() {
 
   const configFields = [
     { key: "title", label: "Título del sorteo" },
-    { key: "subtitle", label: "Subtítulo / premio destacado" },
+    { key: "subtitle", label: "Subtítulo (bajada opcional)" },
     { key: "description", label: "Descripción" },
     { key: "whatsapp_number", label: "WhatsApp admin (solo dígitos)" },
     { key: "alias", label: "Alias único de cobro" },
@@ -893,6 +920,42 @@ export default function AdminPanel() {
                   className={`${inputCls} tnum mt-1`}
                 />
               </label>
+            </div>
+            <div className="mt-4 rounded-2xl border border-brand-100 p-4 dark:border-white/10">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h3 className="flex items-center gap-1.5 text-sm font-bold">
+                  <SparkIcon className="h-4 w-4 text-brand-600 dark:text-brand-300" />
+                  Premios del sorteo
+                </h3>
+                <button onClick={addPrize}
+                  className="flex h-9 items-center gap-1 rounded-lg border border-brand-200 px-3 text-xs font-bold text-brand-700 transition hover:bg-brand-50 active:scale-95 dark:border-brand-500/30 dark:text-brand-300 dark:hover:bg-brand-500/10">
+                  <PlusIcon className="h-3.5 w-3.5" /> Agregar premio
+                </button>
+              </div>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                Se muestran en el podio del inicio, en este orden. Los vacíos no se guardan.
+              </p>
+              <div className="mt-2 space-y-2">
+                {settings.prizes.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="flex h-8 w-12 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold uppercase text-slate-500 dark:bg-night-700 dark:text-slate-300">
+                      {placeLabel(i)}
+                    </span>
+                    <input
+                      value={p.label}
+                      onChange={(e) => setPrize(i, e.target.value)}
+                      placeholder={`Premio ${i + 1} (ej: MOTO HONDA WAVE 2026)`}
+                      aria-label={`${placeLabel(i)} premio`}
+                      className={`${inputCls} min-w-0 flex-1`}
+                    />
+                    <button onClick={() => removePrize(i)} disabled={settings.prizes.length <= 1}
+                      aria-label={`Quitar ${placeLabel(i)} premio`}
+                      className="flex h-12 w-10 shrink-0 items-center justify-center rounded-xl text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 disabled:opacity-30 disabled:hover:bg-transparent dark:hover:bg-rose-500/10">
+                      <XIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
             <p className="tnum mt-3 rounded-xl bg-brand-50 p-3 text-sm font-semibold text-brand-900 dark:bg-brand-500/10 dark:text-brand-200">
               Rango {rMin}–{rMax} · {total} números en juego
