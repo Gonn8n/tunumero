@@ -7,6 +7,7 @@ Next.js 14 + Tailwind + Supabase + next-themes. Deploy pensado para `tunumero.ve
 2. Authentication → Add user (tantos admins como quieras, email+password).
 3. Opcional: `admin_profiles(user_id, display_name)` para nombre visible.
 4. Ajustá `whatsapp_number` en `raffle_settings` (solo dígitos, ej `5491100000000`).
+5. Para el flujo seguro, agregá `SUPABASE_SERVICE_ROLE_KEY` en `.env.local` y en Vercel. Es **solo servidor**: la home, el alta de reservas y MercadoPago la usan para no exponer DNI/teléfonos ni permitir que el navegador forje premios. Nunca la pongas con prefijo `NEXT_PUBLIC_`. Sin esta key, la home falla cerrada y muestra “Sitio no disponible”.
 
 ### Superadmin
 `supabase.sql` marca automáticamente como superadmin a **anexaria@gmail.com** (si ese usuario ya existe en Authentication). Para marcar otra cuenta:
@@ -25,8 +26,10 @@ El flag `is_super` **solo** se puede cambiar desde el SQL Editor: un trigger blo
 
 ### Pausar el sitio (impago)
 - Config → **Sitio público** → *Pausar sitio* (solo superadmin, con confirmación).
-- Con el sitio pausado, `/` responde **404** (`app/not-found.tsx`), las reservas web se rechazan por RLS y `/api/wheel` bloquea giros nuevos. `/admin` sigue accesible y `/pago` + webhooks de MP siguen funcionando para acreditar pagos ya iniciados.
-- Se reactiva desde el mismo botón.
+- Al pausar podés editar el **mensaje para clientes** y una **fecha estimada de regreso**. Ambos se guardan en `raffle_settings` (`site_pause_message`, `site_pause_until`) y se pueden cambiar después con *Editar mensaje* sin reactivar.
+- Con el sitio pausado, `/` muestra una **página de mantenimiento neutral** (no 404). Las reservas web se rechazan en `/api/reservations`, los giros nuevos se bloquean y `/api/wheel` responde sin premios. `/admin` sigue accesible y `/pago` + webhooks de MP siguen funcionando para acreditar pagos ya iniciados.
+- Se reactiva desde **Activar sitio**.
+- El mensaje público no debe mencionar pagos, deudas ni suspensión.
 
 ### Reiniciar el sorteo
 - **Desde el admin**: Config → *Zona de peligro* → *Reiniciar sorteo* (solo superadmin). Pide escribir `REINICIAR` y llama al RPC `reset_raffle()`, que devuelve los conteos borrados.
@@ -41,9 +44,11 @@ npm run dev
 ```
 
 ## 3. Vercel
-- Import repo → Project Name `tunumero` → env `NEXT_PUBLIC_SUPABASE_URL` y `NEXT_PUBLIC_SUPABASE_ANON_KEY` → Deploy.
+- Import repo → Project Name `tunumero` → env `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` → Deploy.
+- Verificá en Supabase Auth que el registro público esté deshabilitado; los admins se crean manualmente desde Authentication → Users.
 
 ## Rutas
-- `/` pública: info sorteo, buscador, sugerencias (misma terminación + cercanos), modal Nombre/Apellido/DNI/Teléfono + botón WhatsApp.
+- `/` pública: info sorteo, buscador, sugerencias (misma terminación + cercanos), modal Nombre/Apellido/DNI/Teléfono + botón WhatsApp. Si el sitio está pausado, muestra la página de mantenimiento.
+- `/api/reservations` (POST): valida números, datos y premio de ruleta en el servidor; es el único camino para crear reservas web.
 - `/admin/login` login Supabase Auth.
 - `/admin` cards (disponibles/reservados/pendientes/confirmados/cancelados) + tabs + reservar manual + config (premio, fecha, precio, alias único, transferencia, WhatsApp, **rango mínimo/máximo**). Confirmar pago guarda `confirmed_by`. Achicar el rango se bloquea si hay números activos fuera (UI + trigger DB).

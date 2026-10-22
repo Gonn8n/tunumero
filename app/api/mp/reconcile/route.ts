@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabaseServer";
+import { createServiceSupabase } from "@/lib/supabaseAdmin";
 
 /** POST {batch_id} (solo admin) → busca el pago en MP por external_reference y confirma si está aprobado.
  *  Cubre webhooks perdidos o demorados (sandbox). */
 export async function POST(req: Request) {
-  const supabase = createServerSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
+  const auth = createServerSupabase();
+  const { data: { user } } = await auth.auth.getUser();
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+  const supabase = createServiceSupabase();
   if (!process.env.MP_ACCESS_TOKEN) {
     return NextResponse.json({ error: "Falta MP_ACCESS_TOKEN en el servidor." }, { status: 503 });
   }

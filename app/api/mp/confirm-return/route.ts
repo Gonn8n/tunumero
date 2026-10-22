@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabaseServer";
+import { createServiceSupabase } from "@/lib/supabaseAdmin";
 
 /** POST {batch_id} PÚBLICA (sin login): el comprador volvió de MP.
  *  Segura por diseño: solo confirma si la API de MP dice "approved" (idempotente).
  *  Cubre los casos donde el webhook no llegó o se demoró. */
 export async function POST(req: Request) {
-  const supabase = createServerSupabase();
+  const supabase = createServiceSupabase();
   if (!process.env.MP_ACCESS_TOKEN) return NextResponse.json({ ok: false }, { status: 503 });
 
   const body = await req.json().catch(() => ({}));

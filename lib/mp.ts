@@ -1,5 +1,5 @@
 import { MercadoPagoConfig } from "mercadopago";
-import type { createServerSupabase } from "@/lib/supabaseServer";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 /** Cliente MP (solo servidor — el Access Token nunca sale al front) */
 export function mpClient() {
@@ -14,7 +14,7 @@ export function siteUrl() {
 
 /** ¿Cobro con MP habilitado? (tolerante: si el SQL aún no se corrió, responde configurando=false) */
 export async function mpStatus(
-  supabase: ReturnType<typeof createServerSupabase>
+  supabase: SupabaseClient
 ): Promise<{ ready: boolean; enabled: boolean; reason?: string }> {
   if (!process.env.MP_ACCESS_TOKEN) {
     return { ready: false, enabled: false, reason: "Falta MP_ACCESS_TOKEN en el servidor." };

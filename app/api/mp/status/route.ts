@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabaseServer";
+import { createServiceSupabase } from "@/lib/supabaseAdmin";
 
 /** GET ?batch= → estado del lote para la página de retorno */
 export async function GET(req: Request) {
   const batch = new URL(req.url).searchParams.get("batch") ?? "";
   if (!batch) return NextResponse.json({ error: "Falta batch" }, { status: 400 });
-  const supabase = createServerSupabase();
+  const supabase = createServiceSupabase();
   const { data: rows } = await supabase.from("tickets").select("status").eq("batch_id", batch);
   const list = (rows ?? []) as { status: string }[];
   if (list.length === 0) return NextResponse.json({ found: false });

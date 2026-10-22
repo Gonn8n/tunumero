@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { createServerSupabase } from "@/lib/supabaseServer";
+import { createServiceSupabase } from "@/lib/supabaseAdmin";
 
 /** PATCH { id, action: 'confirm' | 'cancel', cancel_reason? } — registra quién confirma/cancela */
 export async function PATCH(req: Request) {
-  const supabase = createServerSupabase();
-  const { data: { user } } = await supabase.auth.getUser();
+  const auth = createServerSupabase();
+  const { data: { user } } = await auth.auth.getUser();
   if (!user) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   const body = await req.json().catch(() => ({}));
@@ -13,6 +14,7 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "Parámetros inválidos" }, { status: 400 });
   }
 
+  const supabase = createServiceSupabase();
   const patch =
     action === "confirm"
       ? { status: "confirmado", confirmed_by: user.id, confirmed_at: new Date().toISOString(), updated_at: new Date().toISOString() }

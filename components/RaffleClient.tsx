@@ -6,7 +6,6 @@ import {
   pickFreeNumbers, prizeShort,
   type Promo, type WheelPrize, type WheelSegment
 } from "@/lib/tickets";
-import { createClient } from "@/lib/supabaseClient";
 import { ChatIcon, CheckIcon, SearchIcon, SparkIcon, TicketIcon, XIcon } from "./icons";
 import CopyButton from "./CopyButton";
 import PrizeWheel from "./PrizeWheel";
@@ -34,7 +33,6 @@ const inputCls =
 
 export default function RaffleClient(props: Props) {
   const { taken, whatsapp, min, max, alias, cuit, titular, bank, unitPrice, currency, promos, mpEnabled } = props;
-  const supabase = createClient();
   const takenSet = useMemo(() => new Set(taken), [taken]);
   const packs = useMemo(() => packOptions(unitPrice, currency, promos), [unitPrice, currency, promos]);
 
@@ -244,76 +242,59 @@ export default function RaffleClient(props: Props) {
       return;
     }
     setError("");
-    // Si hay premio, se revalida en el servidor antes de grabar (anti-abuso)
-    let prizeCols = {};
-    let extras: number[] = [];
-    let hasPrize = false;
-    if (prize) {
-      try {
-        const v = await fetch("/api/wheel", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ op: "validate", session_key: sessionKey.current, spin_id: prize.spinId })
-        });
-        const vj = await v.json().catch(() => ({}));
-        if (!vj.ok) {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/reservations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          numbers: selected,
+          form: {
+            nombre: form.nombre.trim(),
+            apellido: form.apellido.trim(),
+            dni: form.dni.trim(),
+            telefono: form.telefono.trim()
+          },
+          spin: prize ? { spin_id: prize.spinId, session_key: sessionKey.current } : null
+        })
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.ok) {
+        if (j.code === "prize") {
           setPrize(null);
           setBonusNums([]);
           try { localStorage.removeItem("tnPrize"); } catch { /* noop */ }
-          setError("Tu premio de la ruleta venció. Podés reservar igual sin premio.");
-          return;
         }
-        prizeCols = { prize_label: prize.label, prize_kind: prize.kind, prize_value: prize.value };
-        hasPrize = true;
-        if (prize.kind !== "discount") {
-          extras = pickFreeNumbers(prizeExtra, takenSet, selected, min, max);
-        }
-      } catch {
-        setError("No se pudo validar tu premio. Intentá de nuevo.");
+        setError(j.error ?? "No se pudo guardar la reserva. Revisá la selección.");
         return;
       }
+
+      const batchId = String(j.batch_id ?? "");
+      const finalNumbers = Array.isArray(j.numbers) ? (j.numbers as number[]) : [...selected];
+      const extraNumbers = Array.isArray(j.extras) ? (j.extras as number[]) : [];
+      if (!batchId) {
+        setError("No se pudo guardar la reserva. Intentá de nuevo.");
+        return;
+      }
+
+      if (prize) {
+        setDonePrizeLabel(` (${prizeShort(prize)})`);
+        setPrize(null);
+        try { localStorage.removeItem("tnPrize"); } catch { /* noop */ }
+      } else {
+        setDonePrizeLabel("");
+      }
+      setBonusNums(extraNumbers);
+      setDoneTotal(finalTotal);
+      setBatchKey(batchId);
+      setMpError("");
+      setBatch(finalNumbers);
+      setDone(true);
+    } catch {
+      setError("No se pudo guardar la reserva. Revisá tu conexión.");
+    } finally {
+      setSaving(false);
     }
-    setSaving(true);
-    const batchId = crypto.randomUUID();
-    const base = {
-      nombre: form.nombre.trim(),
-      apellido: form.apellido.trim(),
-      dni: form.dni.trim(),
-      telefono: form.telefono.trim(),
-      status: "pendiente",
-      source: "web",
-      batch_id: batchId
-    };
-    const rows = [
-      ...selected.map((number) => ({ ...base, number, ...(hasPrize ? { is_bonus: false, ...prizeCols } : {}) })),
-      ...extras.map((number) => ({ ...base, number, ...(hasPrize ? { is_bonus: true, ...prizeCols } : {}) }))
-    ];
-    const { error } = await supabase.from("tickets").insert(rows);
-    setSaving(false);
-    if (error) {
-      setError("Uno de los números se acaba de ocupar. Revisá la selección.");
-      return;
-    }
-    // Marca el premio como usado (si falla, el admin igual ve el premio en el lote)
-    if (prize) {      try {
-        await fetch("/api/wheel", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ op: "apply", session_key: sessionKey.current, spin_id: prize.spinId, batch_id: batchId })
-        });
-      } catch { /* noop */ }
-      setDonePrizeLabel(` (${prizeShort(prize)})`);
-      setPrize(null);
-      setBonusNums([]);
-      try { localStorage.removeItem("tnPrize"); } catch { /* noop */ }
-    } else {
-      setDonePrizeLabel("");
-    }
-    setDoneTotal(finalTotal);
-    setBatchKey(batchId);
-    setMpError("");
-    setBatch([...selected, ...extras]);
-    setDone(true);
   };
 
   const usePrizeNow = (p: WheelPrize) => {
@@ -362,12 +343,7 @@ export default function RaffleClient(props: Props) {
 
   const openModal = () => {
     if (!canReserve) return;
-    // Pre-asigna los números de regalo para mostrarlos antes de confirmar
-    if (prize && prize.kind !== "discount" && prizeExtra > 0) {
-      setBonusNums(pickFreeNumbers(prizeExtra, takenSet, selected, min, max));
-    } else {
-      setBonusNums([]);
-    }
+    setBonusNums([]);
     setDone(false);
     setError("");
     setShowModal(true);
@@ -601,7 +577,12 @@ export default function RaffleClient(props: Props) {
                   🎁 {prize.label} · vence en {prizeLeft || "--:--"}
                 </p>
               )}
-              {!done && bonusNums.length > 0 && (
+              {!done && prize && prize.kind !== "discount" && prizeExtra > 0 && (
+                <p className="mt-1 text-xs font-semibold text-brand-100">
+                  Se asignarán {prizeExtra} número{prizeExtra === 1 ? "" : "s"} de regalo al confirmar.
+                </p>
+              )}
+              {done && bonusNums.length > 0 && (
                 <p className="tnum mt-1 text-xs font-semibold text-brand-100">
                   + de regalo: {bonusNums.join(" · ")}
                 </p>

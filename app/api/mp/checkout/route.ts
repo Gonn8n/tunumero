@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Preference } from "mercadopago";
-import { createServerSupabase } from "@/lib/supabaseServer";
+import { createServiceSupabase } from "@/lib/supabaseAdmin";
 import { mpClient, mpStatus, siteUrl } from "@/lib/mp";
 import { bestQuote, type Promo } from "@/lib/tickets";
 
@@ -16,7 +16,7 @@ interface BatchTicket {
 
 /** POST {batch_id} → crea la preferencia de pago con el total calculado EN EL SERVIDOR */
 export async function POST(req: Request) {
-  const supabase = createServerSupabase();
+  const supabase = createServiceSupabase();
   const st = await mpStatus(supabase);
   if (!st.ready || !st.enabled) {
     return NextResponse.json({ error: st.reason ?? "Pagos no disponibles." }, { status: 503 });

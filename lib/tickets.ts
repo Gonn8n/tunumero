@@ -1,3 +1,6 @@
+// Mensaje público por defecto cuando el sitio está pausado.
+export const DEFAULT_PAUSE_MESSAGE = "Estamos actualizando el sitio. Volvemos pronto.";
+
 // Defaults cuando aún no hay config en DB (mismo rango inicial: 0–4999)
 export const MIN_NUMBER = 0;
 export const MAX_NUMBER = 4999;

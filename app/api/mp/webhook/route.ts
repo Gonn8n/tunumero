@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { Payment } from "mercadopago";
-import { createServerSupabase } from "@/lib/supabaseServer";
+import { createServiceSupabase } from "@/lib/supabaseAdmin";
 import { mpClient } from "@/lib/mp";
 
 /** Extrae el payment id que manda MP (query legacy ?data.id= / ?id= o JSON {data:{id}}) */
@@ -18,7 +18,7 @@ async function paymentId(req: Request): Promise<string | null> {
 }
 
 async function handle(req: Request) {
-  const supabase = createServerSupabase();
+  const supabase = createServiceSupabase();
   const pid = await paymentId(req);
   if (!pid) return NextResponse.json({ ok: true }); // ping de MP sin pago, se ignora
   if (!process.env.MP_ACCESS_TOKEN) {
@@ -50,7 +50,7 @@ async function handle(req: Request) {
     const expected = Number((pend as { amount?: number } | null)?.amount ?? NaN);
 
     if (status === "approved" && (!Number.isFinite(expected) || amount + 1 >= expected)) {
-      // Acredita el lote vía función segura (el webhook es anon y RLS bloquea UPDATE directo)
+      // Acredita el lote vía función segura (service role; RLS bloquea UPDATE directo desde el navegador)
       const { error: rpcError } = await supabase.rpc("mp_confirm_batch", {
         p_batch: batchId,
         p_payment_id: String(info.id ?? pid),

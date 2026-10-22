@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
-import { createServerSupabase } from "@/lib/supabaseServer";
+import { createServiceSupabase } from "@/lib/supabaseAdmin";
 import { wheelActiveNow, type WheelConfig, type WheelSegment } from "@/lib/tickets";
 
 /** GET → estado vigente (horario evaluado en el servidor) + catálogo activo */
 export async function GET() {
-  const supabase = createServerSupabase();
+  const supabase = createServiceSupabase();
+  const { data: rs } = await supabase.from("raffle_settings").select("site_enabled").eq("id", 1).single();
+  const siteEnabled = (rs as { site_enabled?: boolean } | null)?.site_enabled !== false;
   const { data: cfg } = await supabase.from("wheel_config").select("*").eq("id", 1).single();
   const config = cfg as WheelConfig | null;
-  const active = config ? wheelActiveNow(config) : false;
+  const active = siteEnabled && config ? wheelActiveNow(config) : false;
   let segments: WheelSegment[] = [];
   if (active) {
     const { data: segs } = await supabase
@@ -40,7 +42,7 @@ interface SpinRow {
 
 /** POST {op:'spin'|'validate'|'apply', ...} — el servidor elige y valida el premio */
 export async function POST(req: Request) {
-  const supabase = createServerSupabase();
+  const supabase = createServiceSupabase();
   const body = await req.json().catch(() => ({}));
   const { op, session_key, spin_id, batch_id } = body as {
     op: string; session_key?: string; spin_id?: string; batch_id?: string;

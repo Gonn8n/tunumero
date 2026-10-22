@@ -1,10 +1,13 @@
-import { createServerSupabase } from "@/lib/supabaseServer";
+import type { Metadata } from "next";
+import { cache } from "react";
+import { createServiceSupabase } from "@/lib/supabaseAdmin";
+import { fetchActiveNumbers } from "@/lib/serverData";
 import RaffleClient from "@/components/RaffleClient";
 import PhotoGallery, { type GalleryPhoto } from "@/components/PhotoGallery";
+import Maintenance from "@/components/Maintenance";
 import ThemeToggle from "@/components/ThemeToggle";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { totalNumbers, MIN_NUMBER, MAX_NUMBER, placeLabel, type Promo } from "@/lib/tickets";
+import { totalNumbers, MIN_NUMBER, MAX_NUMBER, placeLabel, DEFAULT_PAUSE_MESSAGE, type Promo } from "@/lib/tickets";
 import { CalendarIcon, CashIcon, ShieldIcon, TicketIcon } from "@/components/icons";
 
 export const dynamic = "force-dynamic";
@@ -34,60 +37,89 @@ const FALLBACK = {
   transfer_bank: "Mercado Pago",
   min_number: MIN_NUMBER,
   max_number: MAX_NUMBER,
-  site_enabled: true
+  site_enabled: true,
+  site_pause_message: DEFAULT_PAUSE_MESSAGE as string | null,
+  site_pause_until: null as string | null,
+  mp_enabled: true
 };
 
+type SiteSettings = typeof FALLBACK;
+
+const getSite = cache(async (): Promise<{ settings: SiteSettings; error: boolean }> => {
+  try {
+    const supabase = createServiceSupabase();
+    const { data: s, error } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
+    if (error || !s) {
+      if (error) console.error("[home] no se pudo leer raffle_settings:", error.message);
+      return { settings: FALLBACK, error: true };
+    }
+    return { settings: { ...FALLBACK, ...(s as Partial<SiteSettings>) }, error: false };
+  } catch (e) {
+    console.error("[home] configuración del sitio no disponible:", e instanceof Error ? e.message : e);
+    return { settings: FALLBACK, error: true };
+  }
+});
+
+export async function generateMetadata(): Promise<Metadata> {
+  const { settings, error } = await getSite();
+  if (error || settings.site_enabled === false) {
+    return {
+      title: "Volvemos en breve · tunumero",
+      robots: { index: false, follow: false }
+    };
+  }
+  return {};
+}
+
 export default async function Home() {
-  let settings = FALLBACK;
+  const { settings, error } = await getSite();
+  if (error || settings.site_enabled === false) {
+    return (
+      <Maintenance
+        message={settings.site_pause_message}
+        until={settings.site_pause_until}
+        whatsapp={settings.whatsapp_number}
+        unavailable={error}
+      />
+    );
+  }
+
+  const supabase = createServiceSupabase();
+  const min0 = Number(settings.min_number ?? MIN_NUMBER);
+  const max0 = Number(settings.max_number ?? MAX_NUMBER);
   let taken: number[] = [];
   let photos: GalleryPhoto[] = [];
   let promos: Promo[] = [];
-  let min0 = MIN_NUMBER;
-  let max0 = MAX_NUMBER;
-  try {
-    const supabase = createServerSupabase();
-    const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
-    if (s) settings = { ...FALLBACK, ...s };
-    min0 = Number((s as { min_number?: number } | null)?.min_number ?? MIN_NUMBER);
-    max0 = Number((s as { max_number?: number } | null)?.max_number ?? MAX_NUMBER);
-  } catch {
-    /* sin env/Supabase: usa fallback para poder ver el diseño */
-  }
-  // Sitio pausado por el superadmin: 404 antes de cargar números/fotos.
-  if (settings.site_enabled === false) notFound();
 
   try {
-    const supabase = createServerSupabase();
-    // Ocupados por chunks de 1000 (robusto aunque el rango crezca)
-    const CHUNK = 1000;
-    for (let from = 0; ; from += CHUNK) {
-      const { data: t } = await supabase
-        .from("tickets")
-        .select("number")
-        .in("status", ["pendiente", "reservado", "confirmado"])
-        .gte("number", min0)
-        .lte("number", max0)
-        .order("number")
-        .range(from, from + CHUNK - 1);
-      if (!t || t.length === 0) break;
-      taken.push(...t.map((r: { number: number }) => r.number));
-      if (t.length < CHUNK) break;
-    }
+    taken = await fetchActiveNumbers(supabase, min0, max0);
+  } catch {
+    return (
+      <Maintenance
+        message={settings.site_pause_message}
+        until={settings.site_pause_until}
+        whatsapp={settings.whatsapp_number}
+        unavailable
+      />
+    );
+  }
+
+  try {
     const { data: img } = await supabase
       .from("raffle_images")
       .select("id,image_url,sort_order")
       .order("sort_order", { ascending: true })
       .limit(3);
     if (img) photos = img as GalleryPhoto[];
+  } catch { /* fotos opcionales */ }
+  try {
     const { data: pr } = await supabase
       .from("promos")
       .select("*")
       .eq("active", true)
       .order("sort_order", { ascending: true });
     if (pr) promos = pr as Promo[];
-  } catch {
-    /* sin env/Supabase: usa fallback para poder ver el diseño */
-  }
+  } catch { /* promos opcionales */ }
 
   const date = settings.draw_date
     ? new Date(settings.draw_date).toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" })

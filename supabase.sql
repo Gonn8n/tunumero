@@ -22,8 +22,11 @@ create table if not exists public.raffle_settings (
   constraint settings_range_valid check (min_number >= 0 and max_number <= 99999 and min_number <= max_number)
 );
 
--- Pausa comercial: la home responde 404 y se bloquean reservas nuevas (RLS).
+-- Pausa comercial: la home muestra una página de mantenimiento neutral y
+-- se bloquean reservas/giros nuevos. El panel admin sigue disponible.
 alter table public.raffle_settings add column if not exists site_enabled boolean not null default true;
+alter table public.raffle_settings add column if not exists site_pause_message text;
+alter table public.raffle_settings add column if not exists site_pause_until timestamptz;
 
 create table if not exists public.tickets (
   id uuid primary key default gen_random_uuid(),
@@ -70,20 +73,15 @@ drop policy if exists "settings admin write" on public.raffle_settings;
 create policy "settings admin write" on public.raffle_settings
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
+-- Los tickets NO se leen ni se insertan directo desde el navegador:
+-- la home y el alta de reservas pasan por API server-side con service role.
+-- Esto evita exponer nombre/DNI/teléfono y evita que el cliente forje premios.
 drop policy if exists "tickets public insert pendiente" on public.tickets;
-create policy "tickets public insert pendiente" on public.tickets
-  for insert with check (
-    status = 'pendiente' and source = 'web'
-    and coalesce((select site_enabled from public.raffle_settings where id = 1), true)
-    and number >= (select min_number from public.raffle_settings where id = 1)
-    and number <= (select max_number from public.raffle_settings where id = 1)
-  );
 drop policy if exists "tickets public read active numbers" on public.tickets;
-create policy "tickets public read active numbers" on public.tickets
-  for select using (status in ('pendiente','reservado','confirmado'));
 drop policy if exists "tickets admin all" on public.tickets;
 create policy "tickets admin all" on public.tickets
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+revoke all on public.tickets from anon;
 
 drop policy if exists "profiles admin read" on public.admin_profiles;
 create policy "profiles admin read" on public.admin_profiles
@@ -355,22 +353,15 @@ drop policy if exists "wheel segments admin all" on public.wheel_segments;
 create policy "wheel segments admin all" on public.wheel_segments
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
 
--- Spins: lectura pública (ids imposibles de adivinar), alta anónima,
--- y solo marcar usado una vez (anti doble-uso desde el front).
+-- Spins: el navegador NO lee ni escribe esta tabla directo.
+-- La API de ruleta usa service role; el admin autenticado puede ver todo.
 drop policy if exists "wheel spins public read" on public.wheel_spins;
-create policy "wheel spins public read" on public.wheel_spins for select using (true);
 drop policy if exists "wheel spins anon insert" on public.wheel_spins;
-create policy "wheel spins anon insert" on public.wheel_spins
-  for insert with check (
-    expires_at > now() and expires_at <= now() + interval '2 hours'
-    and coalesce((select site_enabled from public.raffle_settings where id = 1), true)
-  );
 drop policy if exists "wheel spins mark used" on public.wheel_spins;
-create policy "wheel spins mark used" on public.wheel_spins
-  for update using (used_at is null) with check (used_at is not null);
 drop policy if exists "wheel spins admin all" on public.wheel_spins;
 create policy "wheel spins admin all" on public.wheel_spins
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+revoke all on public.wheel_spins from anon;
 
 insert into public.wheel_config (id) values (1)
   on conflict (id) do nothing;
@@ -418,39 +409,41 @@ create index if not exists mp_payments_payment_idx on public.mp_payments (mp_pay
 
 alter table public.mp_payments enable row level security;
 
--- Solo lectura/escritura vía API server (service = anon sin sesión);
--- el admin autenticado puede ver todo.
+-- Solo el admin autenticado lee esta tabla desde el panel.
+-- La API server-side (checkout, webhook, status) usa service role y bypassa RLS.
 drop policy if exists "mp payments admin read" on public.mp_payments;
 create policy "mp payments admin read" on public.mp_payments
   for select using (auth.role() = 'authenticated');
 drop policy if exists "mp payments admin all" on public.mp_payments;
 create policy "mp payments admin all" on public.mp_payments
   for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
-
--- La API server opera con anon key: puede registrar intentos y actualizar estados.
--- Es seguro porque la confirmación de tickets SOLO ocurre cuando el webhook
--- re-consulta el pago a la API de MercadoPago (nunca confía en esta tabla).
 drop policy if exists "mp payments api insert" on public.mp_payments;
-create policy "mp payments api insert" on public.mp_payments
-  for insert with check (status = 'pending' and amount > 0);
 drop policy if exists "mp payments api update" on public.mp_payments;
-create policy "mp payments api update" on public.mp_payments
-  for update using (true) with check (amount > 0);
--- Lectura anónima (la página /pago consulta el estado por batch_id imposible de adivinar;
--- no se guarda email del pagador en filas públicas).
 drop policy if exists "mp payments api read" on public.mp_payments;
-create policy "mp payments api read" on public.mp_payments for select using (true);
+revoke all on public.mp_payments from anon;
 
 -- Confirmación por webhook: SOLO pendiente → confirmado del mismo lote.
--- SECURITY DEFINER porque el webhook opera con anon key (RLS bloquea el UPDATE directo).
--- La seguridad real está en que el webhook re-consulta el pago a la API de MP antes de llamar.
+-- SECURITY DEFINER y ejecutable SOLO por service_role: si estuviera expuesta al
+-- navegador, cualquiera podría confirmar su lote sin pagar. La API server-side
+-- re-consulta el pago a MercadoPago antes de llamar a esta función.
 create or replace function public.mp_confirm_batch(p_batch uuid, p_payment_id text, p_amount numeric)
 returns text language plpgsql security definer set search_path = public as $$
 declare
   pendientes int;
+  esperado numeric;
 begin
-  if p_batch is null or p_amount is null or p_amount <= 0 then
+  if p_batch is null or p_payment_id is null or p_amount is null or p_amount <= 0 then
     return 'invalid';
+  end if;
+  -- El monto aprobado por MP debe cubrir el último intento de checkout del lote.
+  select amount into esperado
+    from public.mp_payments
+    where batch_id = p_batch and status = 'pending'
+    order by created_at desc
+    limit 1;
+  if found and p_amount + 1 < esperado then
+    raise exception 'El monto pagado (%) no coincide con el esperado (%)', p_amount, esperado
+      using errcode = '22003';
   end if;
   select count(*) into pendientes from public.tickets
     where batch_id = p_batch and status = 'pendiente';
@@ -470,7 +463,9 @@ begin
   return 'ok';
 end $$;
 
-grant execute on function public.mp_confirm_batch(uuid, text, numeric) to anon, authenticated;
+revoke all on function public.mp_confirm_batch(uuid, text, numeric) from public;
+revoke all on function public.mp_confirm_batch(uuid, text, numeric) from anon, authenticated;
+grant execute on function public.mp_confirm_batch(uuid, text, numeric) to service_role;
 
 -- ============ PREMIOS DEL SORTEO (podio del hero) ============
 
@@ -495,23 +490,46 @@ revoke all on function public.admin_is_super() from public;
 grant execute on function public.admin_is_super() to authenticated;
 
 -- Activar/pausar la web (solo superadmin). Con site_enabled=false:
--- la home responde 404 y las policies bloquean reservas y giros nuevos.
-create or replace function public.set_site_enabled(p_enabled boolean)
+-- la home muestra una página de mantenimiento neutral y se bloquean
+-- reservas/giros nuevos. El mensaje y la fecha son editables.
+drop function if exists public.set_site_enabled(boolean);
+create or replace function public.set_site_enabled(
+  p_enabled boolean,
+  p_message text default null,
+  p_until timestamptz default null
+)
 returns boolean language plpgsql security definer set search_path = public as $$
 declare
   v_enabled boolean := coalesce(p_enabled, true);
+  v_message text := nullif(btrim(coalesce(p_message, '')), '');
+  v_until timestamptz := p_until;
 begin
   if not public.admin_is_super() then
     raise exception 'Solo el superadmin puede activar o pausar el sitio'
       using errcode = '42501';
   end if;
+  if v_message is not null and char_length(v_message) > 500 then
+    raise exception 'El mensaje no puede superar los 500 caracteres'
+      using errcode = '22001';
+  end if;
+  if not v_enabled and v_until is not null and v_until <= now() then
+    raise exception 'La fecha de regreso debe ser futura'
+      using errcode = '22007';
+  end if;
   update public.raffle_settings
-    set site_enabled = v_enabled, updated_at = now(), updated_by = auth.uid()
+    set site_enabled = v_enabled,
+        site_pause_message = case
+          when v_enabled then site_pause_message
+          else coalesce(v_message, site_pause_message, 'Estamos actualizando el sitio. Volvemos pronto.')
+        end,
+        site_pause_until = case when v_enabled then null else v_until end,
+        updated_at = now(),
+        updated_by = auth.uid()
     where id = 1;
   return v_enabled;
 end $$;
-revoke all on function public.set_site_enabled(boolean) from public;
-grant execute on function public.set_site_enabled(boolean) to authenticated;
+revoke all on function public.set_site_enabled(boolean, text, timestamptz) from public;
+grant execute on function public.set_site_enabled(boolean, text, timestamptz) to authenticated;
 
 -- Reinicio del sorteo (solo superadmin): borra clientes/reservas y datos
 -- transaccionales. Conserva configuración, premios, promos, fotos y ruleta.

@@ -9,7 +9,7 @@ import WheelManager from "@/components/WheelManager";
 import DownloadExcel from "@/components/DownloadExcel";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, groupOrders, bestQuote, breakdownText, formatShort, placeLabel, type Ticket, type Promo, type OrderGroup } from "@/lib/tickets";
+import { totalNumbers, HARD_MIN, HARD_MAX, adminWhatsappLink, groupOrders, bestQuote, breakdownText, formatShort, placeLabel, DEFAULT_PAUSE_MESSAGE, type Ticket, type Promo, type OrderGroup } from "@/lib/tickets";
 import {
   CheckIcon, ChatIcon, ClockIcon, CogIcon, LogoutIcon, PlusIcon,
   ShieldIcon, SparkIcon, TicketIcon, TrashIcon, UsersIcon, XIcon
@@ -29,6 +29,23 @@ interface HistoryEntry {
 
 const inputCls =
   "h-12 w-full rounded-xl border border-slate-300 bg-white px-4 dark:border-white/10 dark:bg-night-800";
+
+function toDatetimeLocal(value?: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatPauseDate(value?: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleString("es-AR", { dateStyle: "long", timeStyle: "short" });
+}
+
+type SiteModal = "pause" | "edit" | "activate" | null;
 
 export default function AdminPanel() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -56,7 +73,9 @@ export default function AdminPanel() {
   const [isSuper, setIsSuper] = useState(false);
   const [siteEnabled, setSiteEnabled] = useState(true);
   const [siteBusy, setSiteBusy] = useState(false);
-  const [siteConfirm, setSiteConfirm] = useState(false);
+  const [siteModal, setSiteModal] = useState<SiteModal>(null);
+  const [siteMessage, setSiteMessage] = useState("");
+  const [siteUntil, setSiteUntil] = useState("");
   const [resetOpen, setResetOpen] = useState(false);
   const [resetText, setResetText] = useState("");
   const [resetBusy, setResetBusy] = useState(false);
@@ -106,6 +125,11 @@ export default function AdminPanel() {
     } catch { /* tabla MP aún no creada: sin badges */ }
     const { data: s } = await supabase.from("raffle_settings").select("*").eq("id", 1).single();
     if (s) setSiteEnabled((s as { site_enabled?: boolean }).site_enabled !== false);
+    if (s) {
+      const site = s as { site_pause_message?: string | null; site_pause_until?: string | null };
+      setSiteMessage(site.site_pause_message ?? "");
+      setSiteUntil(toDatetimeLocal(site.site_pause_until));
+    }
     if (s) setSettings({
       title: s.title ?? "", subtitle: s.subtitle ?? "", description: s.description ?? "",
       draw_date: s.draw_date ? s.draw_date.slice(0, 16) : "",
@@ -283,24 +307,52 @@ export default function AdminPanel() {
   const removePrize = (index: number) =>
     setSettings((s) => (s.prizes.length <= 1 ? s : { ...s, prizes: s.prizes.filter((_, i) => i !== index) }));
 
-  const toggleSite = async (enabled: boolean) => {
+  const openSiteModal = (mode: Exclude<SiteModal, null>) => {
+    if (mode !== "activate" && !siteMessage.trim()) {
+      setSiteMessage(DEFAULT_PAUSE_MESSAGE);
+    }
+    setSiteModal(mode);
+  };
+
+  const saveSite = async (mode: Exclude<SiteModal, null>) => {
+    const enabled = mode === "activate";
+    let untilIso: string | null = null;
+    if (!enabled && siteUntil) {
+      const date = new Date(siteUntil);
+      if (Number.isNaN(date.getTime())) {
+        setNotice({ ok: false, title: "Fecha inválida", body: "Revisá la fecha estimada de regreso." });
+        return;
+      }
+      if (date.getTime() <= Date.now()) {
+        setNotice({ ok: false, title: "Fecha inválida", body: "La fecha de regreso debe ser futura." });
+        return;
+      }
+      untilIso = date.toISOString();
+    }
     setSiteBusy(true);
     const supabase = createClient();
-    const { data, error } = await supabase.rpc("set_site_enabled", { p_enabled: enabled });
+    const { data, error } = await supabase.rpc("set_site_enabled", {
+      p_enabled: enabled,
+      p_message: enabled ? null : siteMessage.trim() || DEFAULT_PAUSE_MESSAGE,
+      p_until: untilIso
+    });
     setSiteBusy(false);
-    setSiteConfirm(false);
     if (error) {
       setNotice({ ok: false, title: "No se pudo cambiar el sitio", body: error.message });
       return;
     }
+    setSiteModal(null);
     const next = data === true;
     setSiteEnabled(next);
+    if (next) setSiteUntil("");
     setNotice({
-      ok: next,
-      title: next ? "Sitio activado" : "Sitio pausado",
-      body: next
-        ? "La web vuelve a estar disponible para los clientes."
-        : "La home responde 404 y no se aceptan reservas nuevas. El panel admin sigue disponible."
+      ok: true,
+      title: mode === "activate" ? "Sitio activado" : mode === "edit" ? "Mensaje actualizado" : "Sitio pausado",
+      body: mode === "activate"
+        ? "La web vuelve a estar disponible para los clientes y se reabren las reservas."
+        : mode === "edit"
+          ? "Los clientes ya ven el nuevo mensaje en la página de mantenimiento."
+          : "La home muestra la página de mantenimiento y no se aceptan reservas nuevas. El panel y los pagos en curso siguen funcionando."
     });
   };
 
@@ -919,18 +971,48 @@ export default function AdminPanel() {
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                     {siteEnabled
                       ? "La web está activa y recibe reservas."
-                      : "La web está pausada: la home responde 404 y no se aceptan reservas nuevas."}
+                      : "La web muestra la página de mantenimiento y no acepta reservas nuevas."}
                   </p>
                 </div>
                 <span className={`rounded-lg px-2.5 py-1 text-xs font-bold ${siteEnabled ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300"}`}>
                   {siteEnabled ? "Activo" : "Pausado"}
                 </span>
               </div>
+              {!siteEnabled && (
+                <div className="mt-3 rounded-xl bg-slate-50 p-3 dark:bg-white/5">
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+                    Mensaje visible
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-700 dark:text-slate-200">
+                    {siteMessage.trim() || DEFAULT_PAUSE_MESSAGE}
+                  </p>
+                  {formatPauseDate(siteUntil) && (
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Regreso estimado: {formatPauseDate(siteUntil)}
+                    </p>
+                  )}
+                </div>
+              )}
               {isSuper ? (
-                <button onClick={() => setSiteConfirm(true)} disabled={siteBusy}
-                  className="mt-3 h-11 rounded-xl border border-slate-300 px-4 text-sm font-bold transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5">
-                  {siteBusy ? "Guardando…" : siteEnabled ? "Pausar sitio" : "Activar sitio"}
-                </button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {siteEnabled ? (
+                    <button onClick={() => openSiteModal("pause")} disabled={siteBusy}
+                      className="h-11 rounded-xl border border-slate-300 px-4 text-sm font-bold transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5">
+                      Pausar sitio
+                    </button>
+                  ) : (
+                    <>
+                      <button onClick={() => openSiteModal("edit")} disabled={siteBusy}
+                        className="h-11 rounded-xl border border-slate-300 px-4 text-sm font-bold transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5">
+                        Editar mensaje
+                      </button>
+                      <button onClick={() => openSiteModal("activate")} disabled={siteBusy}
+                        className="h-11 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white transition hover:bg-emerald-700 active:scale-[.98] disabled:opacity-50">
+                        Activar sitio
+                      </button>
+                    </>
+                  )}
+                </div>
               ) : (
                 <p className="mt-2 text-xs text-slate-400 dark:text-slate-500">
                   Solo el superadmin puede activar o pausar el sitio.
@@ -1074,30 +1156,73 @@ export default function AdminPanel() {
         )}
       </main>
 
-      {/* Confirmar pausa/activación del sitio */}
-      {siteConfirm && typeof document !== "undefined" && createPortal(
+      {/* Pausa, edición del mensaje o activación del sitio */}
+      {siteModal && typeof document !== "undefined" && createPortal(
         <div className="fixed inset-0 z-[100] grid place-items-center bg-night-950/70 p-4 backdrop-blur-sm"
-          onClick={() => { if (!siteBusy) setSiteConfirm(false); }}>
-          <div className="w-full max-w-sm animate-pop-in rounded-3xl bg-white p-6 shadow-card dark:bg-night-850" onClick={(e) => e.stopPropagation()}>
-            <span className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${siteEnabled ? "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300" : "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300"}`}>
+          onClick={() => { if (!siteBusy) setSiteModal(null); }}>
+          <div className={`w-full animate-pop-in rounded-3xl bg-white p-6 shadow-card dark:bg-night-850 ${siteModal === "activate" ? "max-w-sm" : "max-w-md"}`} onClick={(e) => e.stopPropagation()}>
+            <span className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${siteModal === "activate" ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300" : siteModal === "edit" ? "bg-brand-100 text-brand-700 dark:bg-brand-500/15 dark:text-brand-300" : "bg-rose-100 text-rose-600 dark:bg-rose-500/15 dark:text-rose-300"}`}>
               <ShieldIcon className="h-7 w-7" />
             </span>
             <h3 className="mt-3 text-center text-lg font-extrabold tracking-tight">
-              {siteEnabled ? "¿Pausar el sitio?" : "¿Activar el sitio?"}
+              {siteModal === "activate" ? "¿Activar el sitio?" : siteModal === "edit" ? "Mensaje de mantenimiento" : "¿Pausar el sitio?"}
             </h3>
             <p className="mt-1 text-center text-sm text-slate-500 dark:text-slate-400">
-              {siteEnabled
-                ? "La home va a responder 404 y no se van a aceptar reservas nuevas. Los pagos ya iniciados en MercadoPago se pueden seguir acreditando."
-                : "La web vuelve a estar disponible para los clientes y se reabren las reservas."}
+              {siteModal === "activate"
+                ? "La web vuelve a estar disponible para los clientes y se reabren las reservas."
+                : siteModal === "edit"
+                  ? "Actualizá el texto y la fecha que ven los clientes. El sitio sigue pausado."
+                  : "La home va a mostrar la página de mantenimiento y no se van a aceptar reservas nuevas. Los pagos ya iniciados en MercadoPago se pueden seguir acreditando."}
             </p>
+
+            {siteModal !== "activate" && (
+              <div className="mt-4 grid gap-3">
+                <label className="block text-sm font-medium">
+                  Mensaje para clientes
+                  <textarea
+                    value={siteMessage}
+                    onChange={(e) => setSiteMessage(e.target.value)}
+                    maxLength={500}
+                    rows={3}
+                    autoFocus
+                    aria-label="Mensaje de mantenimiento para clientes"
+                    placeholder={DEFAULT_PAUSE_MESSAGE}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm leading-relaxed dark:border-white/10 dark:bg-night-800"
+                  />
+                  <span className="mt-1 block text-right text-[11px] text-slate-400 dark:text-slate-500">
+                    {siteMessage.length}/500
+                  </span>
+                </label>
+                <label className="block text-sm font-medium">
+                  Regreso estimado (opcional)
+                  <input
+                    type="datetime-local"
+                    value={siteUntil}
+                    onChange={(e) => setSiteUntil(e.target.value)}
+                    aria-label="Fecha estimada de regreso"
+                    className={`${inputCls} mt-1`}
+                  />
+                </label>
+                <p className="text-xs leading-relaxed text-slate-400 dark:text-slate-500">
+                  Este texto lo ven los clientes. No incluyas datos de cobro.
+                </p>
+              </div>
+            )}
+
             <div className="mt-4 grid grid-cols-2 gap-2">
-              <button onClick={() => setSiteConfirm(false)} disabled={siteBusy}
+              <button onClick={() => setSiteModal(null)} disabled={siteBusy}
                 className="h-12 rounded-xl border border-slate-300 text-sm font-semibold transition hover:bg-slate-50 disabled:opacity-50 dark:border-white/15 dark:hover:bg-white/5">
                 Cancelar
               </button>
-              <button onClick={() => toggleSite(!siteEnabled)} disabled={siteBusy}
-                className={`h-12 rounded-xl text-sm font-bold text-white transition active:scale-[.98] disabled:opacity-60 ${siteEnabled ? "bg-rose-600 hover:bg-rose-700" : "bg-emerald-600 hover:bg-emerald-700"}`}>
-                {siteBusy ? "Guardando…" : siteEnabled ? "Sí, pausar" : "Sí, activar"}
+              <button onClick={() => { if (siteModal) saveSite(siteModal); }} disabled={siteBusy}
+                className={`h-12 rounded-xl text-sm font-bold text-white transition active:scale-[.98] disabled:opacity-60 ${siteModal === "activate" ? "bg-emerald-600 hover:bg-emerald-700" : siteModal === "edit" ? "bg-brand-600 hover:bg-brand-700" : "bg-rose-600 hover:bg-rose-700"}`}>
+                {siteBusy
+                  ? "Guardando…"
+                  : siteModal === "activate"
+                    ? "Sí, activar"
+                    : siteModal === "edit"
+                      ? "Guardar mensaje"
+                      : "Sí, pausar"}
               </button>
             </div>
           </div>
